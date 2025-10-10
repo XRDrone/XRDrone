@@ -44,6 +44,14 @@ XRDrone is a real-time drone-to-VR streaming and object recognition system. The 
 
 ---
 
+## 💬 Communication & Cadence
+- **Primary Channel:** Microsoft Teams (OSU Capstone workspace)  
+- **Team Meetings:** Fridays 10–11 AM in Person
+- **TA Meetings:** Fridays 11 AM on Zoom  
+- **Sponsor Meetings:** Time TBD with Prof. Raffaele De Amicis  
+
+---
+
 ## 🧰 Tech Stack
 - TBD
 
