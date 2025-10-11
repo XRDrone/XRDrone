@@ -68,14 +68,7 @@ XRDrone is a real-time drone-to-VR streaming and object recognition system. The 
 ---
 
 ## 🧩 Repository Layout
-XRDrone/
-├── .github/
-│   ├── PULL_REQUEST_TEMPLATE.md      
-│   └── workflows/
-│       └── ci.yml                    
-├── LICENSE                          
-├── README.md                        
-└── XRDrone Description.pdf    
+- TBD
 
 ---
 
