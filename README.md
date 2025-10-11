@@ -54,6 +54,14 @@ XRDrone is a real-time drone-to-VR streaming and object recognition system. The 
 
 ---
 
+## 🔀 Branching & Reviews
+- **Default branch:** `main`
+- **Branch flow:** `feature/* → pull request → ≥1 review → merge`
+- **Review cadence:** All PRs reviewed within 24 hours via Teams notification.
+- **PR template:** `.github/PULL_REQUEST_TEMPLATE.md` created to guide contributions.
+
+---
+
 ## 🧰 Tech Stack
 - TBD
 
