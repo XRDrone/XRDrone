@@ -75,4 +75,14 @@ XRDrone/
 │       └── ci.yml                    
 ├── LICENSE                          
 ├── README.md                        
-└── XRDrone Description.pdf          
+└── XRDrone Description.pdf    
+
+---
+## ⚖️ License
+This project is licensed under the MIT License – see the [LICENSE](./LICENSE) file for details.
+---
+## 🙏 Acknowledgements
+Special thanks to **Prof. Raffaele De Amicis** for project sponsorship and guidance,  
+and to Oregon State University’s School of EECS for supporting the XRDrone Capstone.
+---
+
