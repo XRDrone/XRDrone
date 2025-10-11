@@ -1,0 +1,17 @@
+# Unity project essentials
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+
+# OS and IDE junk
+.DS_Store
+.vscode/
+.idea/
+*.sln
+*.csproj
+
+# User settings
+UserSettings/
