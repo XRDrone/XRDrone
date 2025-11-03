@@ -39,6 +39,10 @@ source yolovenv/bin/activate # for mac
 
 Describe the workflow (e.g., trunk-based or GitFlow), default branch, branch naming, and when to rebase vs. merge.
 
+## Project
+
+Maintain project in GitHub for easy tracking of issues and update for additional tasks/assignments.
+
 ## Issues & Planning
 
 Explain how to file issues, required templates/labels, estimation, and triage/assignment practices.
