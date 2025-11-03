@@ -2,17 +2,27 @@
 
 How to set up, code, test, review, and release so contributions meet our Definition of Done.
 
-## Code of Conduct
+## Code of Conduct - William
 
-Reference the project/community behavior expectations and reporting process.
+Project members will be expected to exhibit behavior as outlined in OSU's Code of Student Conduct
+If any member fails to uphold this standard, please report the act to Student Community Standards
+https://scs.oregonstate.edu/
 
 ## Getting Started
 
 List prerequisites, setup steps, environment variables/secrets handling, and how to run the app locally.
 
-## Branching & Workflow
+## Branching & Workflow - William
 
-Describe the workflow (e.g., trunk-based or GitFlow), default branch, branch naming, and when to rebase vs. merge.
+Our GitHub workflow is trunk-based. The default branch is main.
+Project member are expected to create a seperate branch and merge it with main at the end of each working day.
+### Naming Conventions
+- feature/feature-name
+- user/description
+- bug/description
+### Merge vs Rebase
+Members should only rebase their branch if an unrelated change has been made to main that does not conflict with their code.
+Otherwise project members should merge.
 
 ## Issues & Planning
 
