@@ -8,8 +8,33 @@ Reference the project/community behavior expectations and reporting process.
 
 ## Getting Started
 
-List prerequisites, setup steps, environment variables/secrets handling, and how to run the app locally.
+Prerequisites: 
 
+- Unity 6000.60f1 LTS (for VR client) 
+
+- Python 3.10 (for YOLO training/inference) 
+
+-YOLOv8 
+
+-Ultralytics  
+
+-OpenCV 
+ 
+Setup: 
+
+git clone https://github.com/.../XRDrone.git   
+
+cd XRDrone   
+
+pip install -r requirements.txt  
+pip install --upgrade pip 
+pip install ultralytics 
+pip install opencv-python 
+python3 test_live.py 
+python3 -m venv yolovenv 
+source yolovenv/bin/activate # for mac 
+ .\yolovenv\Scripts\activate # for windows 
+ 
 ## Branching & Workflow
 
 Describe the workflow (e.g., trunk-based or GitFlow), default branch, branch naming, and when to rebase vs. merge.
@@ -40,7 +65,15 @@ Link to pipeline definitions, list mandatory jobs, how to view logs/re-run jobs,
 
 ## Security & Secrets
 
-State how to report vulnerabilities, prohibited patterns (hard-coded secrets), dependency update policy, and scanning tools.
+Do NOT commit: 
+
+- .env files 
+
+- API keys (DJI, YOLO, etc.) 
+
+Secrets go to GitHub Secrets. 
+
+To report vulnerability: DM on Teams. 
 
 ## Documentation Expectations
 
@@ -52,4 +85,7 @@ Describe versioning scheme, tagging, changelog generation, packaging/publishing 
 
 ## Support & Contact
 
-Provide maintainer contact channel, expected response windows, and where to ask questions.
+Questions? Contact: 
+- Teams group chat 
+- GitHub Issues (tag as “question”) 
+- Typical response time: under 24 hours 
