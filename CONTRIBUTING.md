@@ -4,8 +4,8 @@ How to set up, code, test, review, and release so contributions meet our Definit
 
 ## Code of Conduct
 
-Project members will be expected to exhibit behavior as outlined in OSU's Code of Student Conduct
-If any member fails to uphold this standard, please report the act to Student Community Standards
+Project members will be expected to exhibit behavior as outlined in OSU's Code of Student Conduct  
+If any member fails to uphold this standard, please report the act to Student Community Standards  
 https://scs.oregonstate.edu/
 
 ## Getting Started
@@ -39,15 +39,15 @@ source yolovenv/bin/activate # for mac
  
 ## Branching & Workflow
 
-Our GitHub workflow is trunk-based. The default branch is main.
-Project member are expected to create a seperate branch and merge it with main at the end of each working day.
+Our GitHub workflow is trunk-based. The default branch is main.  
+Project member are expected to create a seperate branch and merge it with main at the end of each working day.  
 ### Naming Conventions
-- feature/feature-name
-- user/description
-- bug/description
+- feature/feature-name  
+- user/description  
+- bug/description  
 ### Merge vs Rebase
-Members should only rebase their branch if an unrelated change has been made to main that does not conflict with their code.
-Otherwise project members should merge.
+Members should only rebase their branch if an unrelated change has been made to main that does not conflict with their code.  
+Otherwise project members should merge.  
 
 ## Project
 
