@@ -160,11 +160,44 @@ Due to current implementation limitations, this requirement cannot yet be fully 
 
 ## Pull Requests & Reviews
 
-Outline PR requirements (template, checklist, size limits), reviewer expectations, approval rules, and required status checks.
+<details>
+<summary>PR Template</summary>
+PR Name
+
+ Description  
+ - Briefly describe the purpose of this pull request.
+  
+ Related Issue  
+ - Link to any related GitHub issue(s).
+  
+ Testing  
+ - Describe how you tested your changes (e.g., screenshots, logs, build output).
+ 
+ Checklist
+ - [ ] Code builds and runs locally
+ - [ ] Feature branch follows naming convention (feature/<description>)
+ - [ ] Changes reviewed by at least one teammate
+ - [ ] Documentation updated (if needed)
+ - [ ] No sensitive data or credentials committed
+</details>
+
+
+Reviewer Expectations:  
+Reviewers are expected to run the branch's code on their PC to make sure it is working correctly.  
+Reviewers are expected to provide a comment with a reason if they do not approve a PR.  
+Reviewers are expected to ensure the branch does not unintentionally remove items from the main branch.  
+
+Approval Rules:  
+Pull Request reviewed by one member (besides the one who submitted it)
+
+Required Status Checks:  
+Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves.
 
 ## CI/CD
 
 Link to pipeline definitions, list mandatory jobs, how to view logs/re-run jobs, and what must pass before merge/release.
+
+Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves.
 
 ## Security & Secrets
 
