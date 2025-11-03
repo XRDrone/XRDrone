@@ -49,6 +49,10 @@ Project member are expected to create a seperate branch and merge it with main a
 Members should only rebase their branch if an unrelated change has been made to main that does not conflict with their code.
 Otherwise project members should merge.
 
+## Project
+
+Maintain project in GitHub for easy tracking of issues and update for additional tasks/assignments.
+
 ## Issues & Planning
 
 Explain how to file issues, required templates/labels, estimation, and triage/assignment practices.
