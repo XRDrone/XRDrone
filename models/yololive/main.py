@@ -8,7 +8,12 @@ fps_hist = deque(maxlen=30)
 inf_hist = deque(maxlen=30)
 t_prev = time.time()
 
-for r in model(source=0, stream=True, show=False, classes=[0], conf=0.4, imgsz=720):
+for r in model(source=0, 
+               stream=True, 
+               show=False, 
+               classes=[0], 
+               conf=0.4, 
+               imgsz=520):
     now = time.time(); dt = now - t_prev; t_prev = now
     if dt > 0: fps_hist.append(1/dt)
     inf_hist.append(r.speed['inference'])
@@ -26,7 +31,7 @@ for r in model(source=0, stream=True, show=False, classes=[0], conf=0.4, imgsz=7
     ]
 
     frame = draw_hud(frame, lines, anchor="tl")
-
+    frame = cv2.resize(frame, (1280, 720)) 
     cv2.imshow("Live", frame)
     if cv2.waitKey(1) == 27: break
 cv2.destroyAllWindows()
