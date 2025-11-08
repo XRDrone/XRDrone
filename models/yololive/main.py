@@ -11,7 +11,13 @@ t_prev = time.time()
 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 out = cv2.VideoWriter("output.mp4", fourcc, 24, (1280, 720))
 
-for r in model(source=0, stream=True, show=False, classes=[0], conf=0.4, imgsz=1280, save=True):
+for r in model(source=0, 
+               stream=True, 
+               show=False, 
+               classes=[0], 
+               conf=0.4, 
+               imgsz=520):
+
     now = time.time(); dt = now - t_prev; t_prev = now
     if dt > 0: fps_hist.append(1/dt)
     inf_hist.append(r.speed['inference'])
