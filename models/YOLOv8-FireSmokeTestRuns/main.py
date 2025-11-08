@@ -3,21 +3,15 @@ import cv2, time
 from collections import deque
 from hud import draw_hud
 
-model = YOLO("yolo12n.pt")
+model = YOLO("yolov8n.pt")
 fps_hist = deque(maxlen=30)
 inf_hist = deque(maxlen=30)
 t_prev = time.time()
 
 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-out = cv2.VideoWriter("output.mp4", fourcc, 24, (1280, 720))
+out = cv2.VideoWriter("fire_demo.mp4", fourcc, 24, (360, 640))
 
-for r in model(source=0, 
-               stream=True, 
-               show=False, 
-               classes=[0], 
-               conf=0.4, 
-               imgsz=520):
-
+for r in model(source="short_demo.mp4", stream=True, show=False, classes=[0], conf=0.4, imgsz=1280, save=True):
     now = time.time(); dt = now - t_prev; t_prev = now
     if dt > 0: fps_hist.append(1/dt)
     inf_hist.append(r.speed['inference'])
@@ -35,7 +29,8 @@ for r in model(source=0,
     ]
 
     frame = draw_hud(frame, lines, anchor="tl")
-    frame = cv2.resize(frame, (1280, 720))
+    frame = cv2.resize(frame, (360, 640))
+
 
     out.write(frame)
     cv2.imshow("Live", frame)
