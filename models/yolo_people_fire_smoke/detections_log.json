@@ -1,0 +1,926 @@
+[
+  {
+    "timestamp_epoch": 1764216882.310695,
+    "timestamp_local": "8:14:42.31 PM",
+    "class": "person",
+    "confidence": 0.8620264530181885,
+    "bbox_xyxy": [
+      337.4227294921875,
+      200.1207275390625,
+      1248.0078125,
+      1074.3209228515625
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216882.310695,
+    "timestamp_local": "8:14:42.31 PM",
+    "class": "smoke",
+    "confidence": 0.4209795296192169,
+    "bbox_xyxy": [
+      34.11628341674805,
+      1.5211670398712158,
+      1190.99267578125,
+      1035.38525390625
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216882.4817228,
+    "timestamp_local": "8:14:42.48 PM",
+    "class": "person",
+    "confidence": 0.8642076849937439,
+    "bbox_xyxy": [
+      131.72488403320312,
+      197.09857177734375,
+      1245.393798828125,
+      1072.800048828125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216882.4817228,
+    "timestamp_local": "8:14:42.48 PM",
+    "class": "smoke",
+    "confidence": 0.3759768307209015,
+    "bbox_xyxy": [
+      41.53278732299805,
+      0.0,
+      1214.60888671875,
+      1036.8095703125
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216882.655201,
+    "timestamp_local": "8:14:42.65 PM",
+    "class": "person",
+    "confidence": 0.866958737373352,
+    "bbox_xyxy": [
+      172.92562866210938,
+      197.37844848632812,
+      1252.07275390625,
+      1073.366455078125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216882.655201,
+    "timestamp_local": "8:14:42.65 PM",
+    "class": "fire",
+    "confidence": 0.2692130208015442,
+    "bbox_xyxy": [
+      1.5729492902755737,
+      0.0,
+      1229.475341796875,
+      1066.6947021484375
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216882.853306,
+    "timestamp_local": "8:14:42.85 PM",
+    "class": "person",
+    "confidence": 0.8457054495811462,
+    "bbox_xyxy": [
+      157.92599487304688,
+      198.18585205078125,
+      1255.8782958984375,
+      1073.347900390625
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216882.853306,
+    "timestamp_local": "8:14:42.85 PM",
+    "class": "fire",
+    "confidence": 0.4672168791294098,
+    "bbox_xyxy": [
+      26.329248428344727,
+      0.0,
+      1241.8822021484375,
+      1059.8060302734375
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.058073,
+    "timestamp_local": "8:14:43.05 PM",
+    "class": "person",
+    "confidence": 0.8799471259117126,
+    "bbox_xyxy": [
+      113.50698852539062,
+      197.24130249023438,
+      1252.0218505859375,
+      1073.2330322265625
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.058073,
+    "timestamp_local": "8:14:43.05 PM",
+    "class": "fire",
+    "confidence": 0.41007786989212036,
+    "bbox_xyxy": [
+      27.478858947753906,
+      68.72248840332031,
+      1222.0460205078125,
+      1061.01611328125
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.229056,
+    "timestamp_local": "8:14:43.22 PM",
+    "class": "person",
+    "confidence": 0.8982760310173035,
+    "bbox_xyxy": [
+      116.3096923828125,
+      197.99505615234375,
+      1251.682373046875,
+      1073.3006591796875
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.229056,
+    "timestamp_local": "8:14:43.22 PM",
+    "class": "fire",
+    "confidence": 0.285592257976532,
+    "bbox_xyxy": [
+      31.889026641845703,
+      58.217506408691406,
+      1218.9366455078125,
+      1060.6734619140625
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.3957891,
+    "timestamp_local": "8:14:43.39 PM",
+    "class": "person",
+    "confidence": 0.894025981426239,
+    "bbox_xyxy": [
+      110.80059814453125,
+      197.89553833007812,
+      1248.114990234375,
+      1072.9698486328125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.3957891,
+    "timestamp_local": "8:14:43.39 PM",
+    "class": "default",
+    "confidence": 0.42592471837997437,
+    "bbox_xyxy": [
+      17.68798828125,
+      4.666772365570068,
+      1695.5469970703125,
+      1064.1124267578125
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.565182,
+    "timestamp_local": "8:14:43.56 PM",
+    "class": "person",
+    "confidence": 0.8938313126564026,
+    "bbox_xyxy": [
+      112.92718505859375,
+      198.06216430664062,
+      1250.33349609375,
+      1073.165771484375
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.565182,
+    "timestamp_local": "8:14:43.56 PM",
+    "class": "default",
+    "confidence": 0.5298599004745483,
+    "bbox_xyxy": [
+      18.508153915405273,
+      12.881543159484863,
+      1569.4072265625,
+      1057.303466796875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.73524,
+    "timestamp_local": "8:14:43.73 PM",
+    "class": "person",
+    "confidence": 0.8958811163902283,
+    "bbox_xyxy": [
+      114.26751708984375,
+      196.7618408203125,
+      1252.53955078125,
+      1072.3536376953125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.73524,
+    "timestamp_local": "8:14:43.73 PM",
+    "class": "default",
+    "confidence": 0.6819701194763184,
+    "bbox_xyxy": [
+      16.66963005065918,
+      12.24814510345459,
+      1676.5875244140625,
+      1059.0079345703125
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.900548,
+    "timestamp_local": "8:14:43.90 PM",
+    "class": "person",
+    "confidence": 0.893500804901123,
+    "bbox_xyxy": [
+      109.2886962890625,
+      196.845703125,
+      1250.9752197265625,
+      1072.5626220703125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216883.900548,
+    "timestamp_local": "8:14:43.90 PM",
+    "class": "default",
+    "confidence": 0.6233980655670166,
+    "bbox_xyxy": [
+      18.484424591064453,
+      11.614306449890137,
+      1642.8909912109375,
+      1060.77978515625
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.069317,
+    "timestamp_local": "8:14:44.06 PM",
+    "class": "person",
+    "confidence": 0.907626211643219,
+    "bbox_xyxy": [
+      116.91064453125,
+      197.89892578125,
+      1252.389892578125,
+      1072.96923828125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.069317,
+    "timestamp_local": "8:14:44.06 PM",
+    "class": "default",
+    "confidence": 0.5538979172706604,
+    "bbox_xyxy": [
+      15.470508575439453,
+      4.333593845367432,
+      1769.716796875,
+      1064.406494140625
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.2476218,
+    "timestamp_local": "8:14:44.24 PM",
+    "class": "person",
+    "confidence": 0.9021985530853271,
+    "bbox_xyxy": [
+      107.23580932617188,
+      198.20260620117188,
+      1249.925537109375,
+      1073.7777099609375
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.2476218,
+    "timestamp_local": "8:14:44.24 PM",
+    "class": "default",
+    "confidence": 0.6092238426208496,
+    "bbox_xyxy": [
+      18.06298828125,
+      12.90036678314209,
+      1472.5699462890625,
+      1057.3895263671875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.418678,
+    "timestamp_local": "8:14:44.41 PM",
+    "class": "person",
+    "confidence": 0.8996168971061707,
+    "bbox_xyxy": [
+      96.61715698242188,
+      197.28607177734375,
+      1252.363037109375,
+      1072.457275390625
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.418678,
+    "timestamp_local": "8:14:44.41 PM",
+    "class": "default",
+    "confidence": 0.31425780057907104,
+    "bbox_xyxy": [
+      14.23740291595459,
+      3.702392578125,
+      1734.257568359375,
+      1059.7373046875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.587224,
+    "timestamp_local": "8:14:44.58 PM",
+    "class": "person",
+    "confidence": 0.8938761949539185,
+    "bbox_xyxy": [
+      114.0076904296875,
+      198.96743774414062,
+      1255.5098876953125,
+      1072.6151123046875
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.587224,
+    "timestamp_local": "8:14:44.58 PM",
+    "class": "default",
+    "confidence": 0.2569790184497833,
+    "bbox_xyxy": [
+      25.360401153564453,
+      15.152856826782227,
+      1386.7579345703125,
+      1055.3411865234375
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.755983,
+    "timestamp_local": "8:14:44.75 PM",
+    "class": "person",
+    "confidence": 0.8898606896400452,
+    "bbox_xyxy": [
+      126.63299560546875,
+      198.49136352539062,
+      1251.383056640625,
+      1072.1563720703125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.755983,
+    "timestamp_local": "8:14:44.75 PM",
+    "class": "default",
+    "confidence": 0.29822224378585815,
+    "bbox_xyxy": [
+      25.703907012939453,
+      14.355396270751953,
+      1378.0860595703125,
+      1052.4815673828125
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.9286358,
+    "timestamp_local": "8:14:44.92 PM",
+    "class": "person",
+    "confidence": 0.8891398906707764,
+    "bbox_xyxy": [
+      163.2978515625,
+      198.3050537109375,
+      1252.8604736328125,
+      1072.12353515625
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216884.9286358,
+    "timestamp_local": "8:14:44.92 PM",
+    "class": "default",
+    "confidence": 0.25069817900657654,
+    "bbox_xyxy": [
+      25.036523818969727,
+      15.41294002532959,
+      1401.0908203125,
+      1053.4451904296875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.102588,
+    "timestamp_local": "8:14:45.10 PM",
+    "class": "person",
+    "confidence": 0.8864818215370178,
+    "bbox_xyxy": [
+      137.2166748046875,
+      198.46627807617188,
+      1249.2734375,
+      1072.63232421875
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.102588,
+    "timestamp_local": "8:14:45.10 PM",
+    "class": "default",
+    "confidence": 0.3184577524662018,
+    "bbox_xyxy": [
+      25.07197380065918,
+      14.305005073547363,
+      1420.102783203125,
+      1054.4556884765625
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.102588,
+    "timestamp_local": "8:14:45.10 PM",
+    "class": "default",
+    "confidence": 0.2616320252418518,
+    "bbox_xyxy": [
+      67.39643859863281,
+      0.0,
+      1920.0,
+      1068.4285888671875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.267605,
+    "timestamp_local": "8:14:45.26 PM",
+    "class": "person",
+    "confidence": 0.8854824900627136,
+    "bbox_xyxy": [
+      121.68804931640625,
+      198.07003784179688,
+      1249.21875,
+      1072.1824951171875
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.44323,
+    "timestamp_local": "8:14:45.44 PM",
+    "class": "person",
+    "confidence": 0.8872423768043518,
+    "bbox_xyxy": [
+      116.8868408203125,
+      198.90252685546875,
+      1248.5615234375,
+      1072.3521728515625
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.44323,
+    "timestamp_local": "8:14:45.44 PM",
+    "class": "default",
+    "confidence": 0.3089894652366638,
+    "bbox_xyxy": [
+      19.669042587280273,
+      4.8486328125,
+      1690.005859375,
+      1052.70703125
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.6092641,
+    "timestamp_local": "8:14:45.60 PM",
+    "class": "person",
+    "confidence": 0.8959890604019165,
+    "bbox_xyxy": [
+      121.43765258789062,
+      199.19833374023438,
+      1246.5419921875,
+      1072.349365234375
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.7835789,
+    "timestamp_local": "8:14:45.78 PM",
+    "class": "person",
+    "confidence": 0.8839420080184937,
+    "bbox_xyxy": [
+      123.84970092773438,
+      199.0455322265625,
+      1247.9639892578125,
+      1072.475830078125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.7835789,
+    "timestamp_local": "8:14:45.78 PM",
+    "class": "default",
+    "confidence": 0.307039350271225,
+    "bbox_xyxy": [
+      23.753026962280273,
+      15.10678768157959,
+      1431.298583984375,
+      1053.6756591796875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.9545841,
+    "timestamp_local": "8:14:45.95 PM",
+    "class": "person",
+    "confidence": 0.8803867101669312,
+    "bbox_xyxy": [
+      135.0076904296875,
+      198.83523559570312,
+      1247.9793701171875,
+      1072.0576171875
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216885.9545841,
+    "timestamp_local": "8:14:45.95 PM",
+    "class": "default",
+    "confidence": 0.5116914510726929,
+    "bbox_xyxy": [
+      19.996875762939453,
+      15.159961700439453,
+      1605.8447265625,
+      1056.881591796875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.1280608,
+    "timestamp_local": "8:14:46.12 PM",
+    "class": "person",
+    "confidence": 0.9090191721916199,
+    "bbox_xyxy": [
+      108.17935180664062,
+      199.39498901367188,
+      1249.5867919921875,
+      1071.7237548828125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.1280608,
+    "timestamp_local": "8:14:46.12 PM",
+    "class": "default",
+    "confidence": 0.4027758836746216,
+    "bbox_xyxy": [
+      20.233154296875,
+      14.721240997314453,
+      1427.2789306640625,
+      1055.254150390625
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.293668,
+    "timestamp_local": "8:14:46.29 PM",
+    "class": "person",
+    "confidence": 0.8989695906639099,
+    "bbox_xyxy": [
+      111.87030029296875,
+      198.19281005859375,
+      1249.08154296875,
+      1071.92919921875
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.293668,
+    "timestamp_local": "8:14:46.29 PM",
+    "class": "default",
+    "confidence": 0.44315898418426514,
+    "bbox_xyxy": [
+      16.83881950378418,
+      14.402050971984863,
+      1479.637939453125,
+      1056.0162353515625
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.4686022,
+    "timestamp_local": "8:14:46.46 PM",
+    "class": "person",
+    "confidence": 0.8797488808631897,
+    "bbox_xyxy": [
+      197.00418090820312,
+      197.6722412109375,
+      1248.9227294921875,
+      1072.0001220703125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.4686022,
+    "timestamp_local": "8:14:46.46 PM",
+    "class": "default",
+    "confidence": 0.4315221607685089,
+    "bbox_xyxy": [
+      19.59785270690918,
+      13.967358589172363,
+      1471.9019775390625,
+      1054.5205078125
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.641668,
+    "timestamp_local": "8:14:46.64 PM",
+    "class": "person",
+    "confidence": 0.8729893565177917,
+    "bbox_xyxy": [
+      151.51849365234375,
+      202.29766845703125,
+      1250.897216796875,
+      1071.5479736328125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.641668,
+    "timestamp_local": "8:14:46.64 PM",
+    "class": "default",
+    "confidence": 0.40420377254486084,
+    "bbox_xyxy": [
+      23.309911727905273,
+      13.361499786376953,
+      1445.514404296875,
+      1057.5499267578125
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.810526,
+    "timestamp_local": "8:14:46.81 PM",
+    "class": "person",
+    "confidence": 0.8916298747062683,
+    "bbox_xyxy": [
+      228.52029418945312,
+      185.34402465820312,
+      1244.607177734375,
+      1071.1103515625
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.810526,
+    "timestamp_local": "8:14:46.81 PM",
+    "class": "default",
+    "confidence": 0.2682175636291504,
+    "bbox_xyxy": [
+      59.75112533569336,
+      0.0,
+      1920.0,
+      1071.3271484375
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.810526,
+    "timestamp_local": "8:14:46.81 PM",
+    "class": "default",
+    "confidence": 0.25044193863868713,
+    "bbox_xyxy": [
+      20.25732421875,
+      13.332788467407227,
+      1347.6158447265625,
+      1062.283935546875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.9849532,
+    "timestamp_local": "8:14:46.98 PM",
+    "class": "person",
+    "confidence": 0.8707065582275391,
+    "bbox_xyxy": [
+      261.13787841796875,
+      183.04586791992188,
+      1264.08984375,
+      1072.6807861328125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216886.9849532,
+    "timestamp_local": "8:14:46.98 PM",
+    "class": "default",
+    "confidence": 0.26476603746414185,
+    "bbox_xyxy": [
+      19.596240997314453,
+      12.96079158782959,
+      1369.13671875,
+      1059.4486083984375
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.150678,
+    "timestamp_local": "8:14:47.15 PM",
+    "class": "person",
+    "confidence": 0.8994852304458618,
+    "bbox_xyxy": [
+      160.12408447265625,
+      179.89645385742188,
+      1259.8126220703125,
+      1070.828125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.150678,
+    "timestamp_local": "8:14:47.15 PM",
+    "class": "default",
+    "confidence": 0.292838454246521,
+    "bbox_xyxy": [
+      13.058056831359863,
+      10.0059814453125,
+      1210.5255126953125,
+      1059.7362060546875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.323564,
+    "timestamp_local": "8:14:47.32 PM",
+    "class": "person",
+    "confidence": 0.8759772777557373,
+    "bbox_xyxy": [
+      215.36709594726562,
+      190.5772705078125,
+      1325.4462890625,
+      1071.5709228515625
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.323564,
+    "timestamp_local": "8:14:47.32 PM",
+    "class": "default",
+    "confidence": 0.5853977799415588,
+    "bbox_xyxy": [
+      8.9296875,
+      8.140576362609863,
+      1686.226806640625,
+      1060.6304931640625
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.496901,
+    "timestamp_local": "8:14:47.49 PM",
+    "class": "person",
+    "confidence": 0.8498460650444031,
+    "bbox_xyxy": [
+      183.36602783203125,
+      204.35055541992188,
+      1307.28515625,
+      1069.8709716796875
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.496901,
+    "timestamp_local": "8:14:47.49 PM",
+    "class": "default",
+    "confidence": 0.4084974527359009,
+    "bbox_xyxy": [
+      6.064453125,
+      0.0,
+      1700.1829833984375,
+      1049.0545654296875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.66687,
+    "timestamp_local": "8:14:47.66 PM",
+    "class": "person",
+    "confidence": 0.8965327739715576,
+    "bbox_xyxy": [
+      200.19735717773438,
+      214.82135009765625,
+      1301.448974609375,
+      1070.9102783203125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.8344781,
+    "timestamp_local": "8:14:47.83 PM",
+    "class": "person",
+    "confidence": 0.8923735022544861,
+    "bbox_xyxy": [
+      203.84426879882812,
+      223.86383056640625,
+      1333.321533203125,
+      1070.1827392578125
+    ],
+    "source": "people",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.8344781,
+    "timestamp_local": "8:14:47.83 PM",
+    "class": "default",
+    "confidence": 0.3105009198188782,
+    "bbox_xyxy": [
+      14.09751033782959,
+      12.17724609375,
+      1049.9832763671875,
+      1055.1893310546875
+    ],
+    "source": "fire",
+    "has_mask": false
+  },
+  {
+    "timestamp_epoch": 1764216887.8344781,
+    "timestamp_local": "8:14:47.83 PM",
+    "class": "smoke",
+    "confidence": 0.26363465189933777,
+    "bbox_xyxy": [
+      0.9017578363418579,
+      10.76132869720459,
+      980.954833984375,
+      1061.1171875
+    ],
+    "source": "fire",
+    "has_mask": false
+  }
+]

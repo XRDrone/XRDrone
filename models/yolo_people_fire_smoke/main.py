@@ -4,6 +4,7 @@ from collections import deque
 from hud import draw_hud, draw_boxes
 from merger import merge_detections, count_by_class
 import pprint
+from detection_log_loader import save_detections_json
 
 # ---- Settings ----
 SAVE_OUTPUT = False
@@ -19,6 +20,9 @@ FIRE_ON = True     # toggle with 'L'
 people_det_model = YOLO("../yolo11_models/yolo11n.pt")                        # people detection (boxes)
 people_seg_model = YOLO("../yolo11_models/yolo11n-seg.pt")                    # people instance segmentation (masks+boxes)
 fire_model = YOLO("../yolo11_models/fire_smoke_detection.pt")                 # fire/smoke detection (boxes)
+
+DETECTION_LOG_PATH = "detections_log.json"  
+all_detections = []  
 
 colors = {
     'person': (255, 0, 0),   # Blue
@@ -70,10 +74,13 @@ def draw_masks(frame, results, color=(0, 255, 0), alpha=0.35):
 
     return frame
 
+frame_id = 0
 while True:
     ret, frame = cap.read()
     if not ret:
         break
+    frame_id += 1
+
 
     now = time.time()
     dt = now - t_prev
@@ -124,6 +131,13 @@ while True:
         seg_on=effective_seg_on,
         timestamp=now,
     )
+
+    # Attach frame ID to each detection
+    for det in merged:
+        det["frame_id"] = frame_id
+
+    if merged:
+        all_detections.extend(merged)
 
    # --- Debug ---
     # if frame_counter == 5:
@@ -203,3 +217,7 @@ if SAVE_OUTPUT and out is not None:
 cv2.destroyAllWindows()
 if SAVE_OUTPUT:
     print(f"Combined detection video saved to: {output_video}")
+
+# --- Save detection log as JSON with CUSTOM.updateTime-style timestamps ---
+if all_detections:
+    save_detections_json(all_detections, DETECTION_LOG_PATH)
