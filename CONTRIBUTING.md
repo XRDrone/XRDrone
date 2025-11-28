@@ -12,30 +12,8 @@ https://scs.oregonstate.edu/
 
 Prerequisites: 
 
-- Unity 6000.60f1 LTS (for VR client) 
-
-- Python 3.10 (for YOLO training/inference) 
-
--YOLOv8 
-
--Ultralytics  
-
--OpenCV 
- 
-Setup: 
-
-git clone https://github.com/.../XRDrone.git   
-
-cd XRDrone   
-
-pip install -r requirements.txt  
-pip install --upgrade pip 
-pip install ultralytics 
-pip install opencv-python 
-python3 test_live.py 
-python3 -m venv yolovenv 
-source yolovenv/bin/activate # for mac 
- .\yolovenv\Scripts\activate # for windows 
+- Unity 6000.60f1 LTS 
+- Python 3.13.3   
  
 ## Branching & Workflow
 
