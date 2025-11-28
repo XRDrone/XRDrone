@@ -1,3 +1,5 @@
 .env
 datasets/
 training/
+*.csv
+*.json
