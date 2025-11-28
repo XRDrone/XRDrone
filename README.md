@@ -73,6 +73,8 @@ XRDrone is a real-time drone-to-VR system for fire-rescue scenarios that streams
 
 ---
 
+## 🖥️ Tech Stack 
+
 ### 🛰️ Drone + Streaming
 - DJI Neo + RC 2  
 - FFmpeg (USB capture → WHIP)  
@@ -102,25 +104,43 @@ XRDrone is a real-time drone-to-VR system for fire-rescue scenarios that streams
 
 ---
 
-## 📚 Dataset Citations
+## 📚 Citations
+
+### **Ultralytics YOLO11**
+```
+@software{yolo11_ultralytics,
+  author = {Glenn Jocher and Jing Qiu},
+  title = {Ultralytics YOLO11},
+  version = {11.0.0},
+  year = {2024},
+  url = {https://github.com/ultralytics/ultralytics},
+  orcid = {0000-0001-5950-6979, 0000-0003-3783-7069},
+  license = {AGPL-3.0}
+}
+```
 
 ### **WiSARD Dataset**
+```
 @inproceedings{BroylesHaynerEtAl2022,
   author = {Broyles, D.* and Hayner, C.* and Leung, K.},
   booktitle = {{IEEE/RSJ Int.\ Conf.\ on Intelligent Robots \& Systems}},
   title = {{WiSARD}: A Labeled Visual and Thermal Image Dataset for Wilderness Search and Rescue},
   year = {2022},
 }
+```
 
 ---
 
 ### **AeroScapes Dataset**
-**Primary Research Paper:**  
+**Primary Research Paper:** 
+``` 
 Ensemble Knowledge Transfer for Semantic Segmentation
 Ishan Nigam, Chen Huang, Deva Ramanan
 Proceedings of the 2018 IEEE Winter Conference on Applications of Computer Vision
+```
 
 **Dataset Ninja Tools Reference:**  
+```
 @misc{ visualization-tools-for-aeroscapes-dataset,
   title = { Visualization Tools for AeroScapes Dataset },
   type = { Computer Vision Tools },
@@ -133,6 +153,7 @@ Proceedings of the 2018 IEEE Winter Conference on Applications of Computer Visio
   month = { nov },
   note = { visited on 2025-11-28 },
 }
+```
 
 ---
 

@@ -16,10 +16,10 @@ def format_timestamp_local(ts: float) -> str:
     Convert a UNIX timestamp (seconds since epoch) to a local time string
     like "7:05:08.97 PM" (centisecond precision, 12-hour clock).
     """
-    dt = datetime.fromtimestamp(ts)   # local time
+    dt = datetime.fromtimestamp(ts)  # local time
     # 12-hour time without leading zero in the hour
-    base = dt.strftime("%I:%M:%S")   # e.g. "07:05:08"
-    base = base.lstrip("0")          # -> "7:05:08"
+    base = dt.strftime("%I:%M:%S")  # e.g. "07:05:08"
+    base = base.lstrip("0")  # -> "7:05:08"
 
     # centiseconds (0.01s) similar to log format
     centiseconds = int((ts * 100) % 100)

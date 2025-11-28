@@ -50,14 +50,16 @@ def merge_detections(
                 xyxy = b.xyxy[0].tolist()
                 label = people_model.names[cls_id].lower()
 
-                dets.append({
-                    "timestamp": ts,
-                    "class": label,
-                    "confidence": conf,
-                    "bbox_xyxy": xyxy,
-                    "mask": None,
-                    "source": "people",
-                })
+                dets.append(
+                    {
+                        "timestamp": ts,
+                        "class": label,
+                        "confidence": conf,
+                        "bbox_xyxy": xyxy,
+                        "mask": None,
+                        "source": "people",
+                    }
+                )
 
         # Attach masks in the same order as boxes (Ultralytics aligns them)
         if seg_on and people_results[0].masks is not None:
@@ -80,14 +82,16 @@ def merge_detections(
                 xyxy = b.xyxy[0].tolist()
                 label = fire_model.names[cls_id].lower()
 
-                dets.append({
-                    "timestamp": ts,
-                    "class": label,
-                    "confidence": conf,
-                    "bbox_xyxy": xyxy,
-                    "mask": None,  # fire model is detect-only for now
-                    "source": "fire",
-                })
+                dets.append(
+                    {
+                        "timestamp": ts,
+                        "class": label,
+                        "confidence": conf,
+                        "bbox_xyxy": xyxy,
+                        "mask": None,  # fire model is detect-only for now
+                        "source": "fire",
+                    }
+                )
 
     return dets
 
