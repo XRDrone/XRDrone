@@ -83,6 +83,7 @@ In addition to live operation, XRDrone supports **post-flight telemetry review**
 - **PR template:** `.github/PULL_REQUEST_TEMPLATE.md` created to guide contributions.
 
 ---
+## 🖥️ Tech Stack
 
 ### 🛰️ Drone + Streaming
 - DJI Neo + RC 2  
@@ -113,36 +114,44 @@ In addition to live operation, XRDrone supports **post-flight telemetry review**
 
 ---
 
-## 📚 Dataset Citations
+## 📚 Citations
 
-### **WiSARD Dataset**
-@inproceedings{BroylesHaynerEtAl2022,
-  author = {Broyles, D.* and Hayner, C.* and Leung, K.},
-  booktitle = {{IEEE/RSJ Int.\ Conf.\ on Intelligent Robots \& Systems}},
-  title = {{WiSARD}: A Labeled Visual and Thermal Image Dataset for Wilderness Search and Rescue},
-  year = {2022},
+### **Ultralytics YOLO11**
+@software{yolo11_ultralytics,  
+  author = {Glenn Jocher and Jing Qiu},  
+  title = {Ultralytics YOLO11},  
+  version = {11.0.0},  
+  year = {2024},  
+  url = {https://github.com/ultralytics/ultralytics},  
+  orcid = {0000-0001-5950-6979, 0000-0003-3783-7069},  
+  license = {AGPL-3.0}  
 }
 
----
+### **WiSARD Dataset**
+@inproceedings{BroylesHaynerEtAl2022,  
+  author = {Broyles, D.* and Hayner, C.* and Leung, K.},  
+  booktitle = {{IEEE/RSJ Int.\ Conf.\ on Intelligent Robots \& Systems}},  
+  title = {{WiSARD}: A Labeled Visual and Thermal Image Dataset for Wilderness Search and Rescue},  
+  year = {2022},  
+}
 
-### **AeroScapes Dataset**
-**Primary Research Paper:**  
-Ensemble Knowledge Transfer for Semantic Segmentation
-Ishan Nigam, Chen Huang, Deva Ramanan
-Proceedings of the 2018 IEEE Winter Conference on Applications of Computer Vision
+### **AeroScapes Dataset (Primary Paper)**
+Nigam, I., Huang, C., & Ramanan, D.  
+*Ensemble Knowledge Transfer for Semantic Segmentation.*  
+Proc. IEEE Winter Conf. on Applications of Computer Vision, 2018.
 
-**Dataset Ninja Tools Reference:**  
-@misc{ visualization-tools-for-aeroscapes-dataset,
-  title = { Visualization Tools for AeroScapes Dataset },
-  type = { Computer Vision Tools },
-  author = { Dataset Ninja },
-  howpublished = { \url{ https://datasetninja.com/aeroscapes } },
-  url = { https://datasetninja.com/aeroscapes },
-  journal = { Dataset Ninja },
-  publisher = { Dataset Ninja },
-  year = { 2025 },
-  month = { nov },
-  note = { visited on 2025-11-28 },
+### **AeroScapes Visualization Tools (Dataset Ninja)**
+@misc{ visualization-tools-for-aeroscapes-dataset,  
+  title = { Visualization Tools for AeroScapes Dataset },  
+  type = { Computer Vision Tools },  
+  author = { Dataset Ninja },  
+  howpublished = { \url{ https://datasetninja.com/aeroscapes } },  
+  url = { https://datasetninja.com/aeroscapes },  
+  journal = { Dataset Ninja },  
+  publisher = { Dataset Ninja },  
+  year = { 2025 },  
+  month = { nov },  
+  note = { visited on 2025-11-28 },  
 }
 
 ---
