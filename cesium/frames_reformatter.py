@@ -1,5 +1,5 @@
 """
-reformat_frames.py
+frames_reformatter.py
 
 Utility script for reshaping DJI flight log frame data exported by
 dji-log-parser. This tool reads a frames.json file containing a
