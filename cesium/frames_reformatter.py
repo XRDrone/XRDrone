@@ -1,3 +1,21 @@
+"""
+reformat_frames.py
+
+Utility script for reshaping DJI flight log frame data exported by
+dji-log-parser. This tool reads a frames.json file containing a
+"frames": [...] list and rewrites it into a flat list of per-timestamp
+packets while preserving all original fields.
+
+Behavior:
+  • Extracts CUSTOM.dateTime as the explicit "timestamp" field.
+  • Copies all original frame keys and values into the output packet.
+  • Produces a JSON list where each element corresponds to one frame.
+  • Writes <input>_reformatted.json in the current directory.
+
+This script can be imported as a module (via reformat_frames) or run
+interactively from the command line to convert a frames.json file.
+"""
+
 #!/usr/bin/env python3
 import json
 import os
