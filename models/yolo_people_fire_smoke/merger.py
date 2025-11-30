@@ -1,17 +1,23 @@
+# merger.py
 """
 merger.py
 
-Unifies detections from separate Ultralytics YOLO result streams
-(people model + fire/smoke model) into a single per-frame list.
+Merges per-frame YOLO detections from separate people and fire/smoke
+models into a single, timestamped list of detection records.
 
-Each detection is a dict with:
+Each merged detection is a dict with:
   - timestamp: float (seconds since epoch)
-  - class: str ("person", "fire", "smoke", or other model labels)
-  - confidence: float in [0,1]
-  - bbox_xyxy: [x1, y1, x2, y2] floats
-  - mask: optional numpy array (Hmask, Wmask) uint8/bool if seg_on
-  - source: str ("people" or "fire")
+  - class: str ("person", "fire", "smoke", or other model label)
+  - confidence: float in [0, 1]
+  - bbox_xyxy: [x1, y1, x2, y2] in image coordinates
+  - mask: optional numpy array for people masks when segmentation is enabled
+  - source: str ("people" or "fire") indicating which model produced it
+
+Also provides:
+  - count_by_class(): small helper to aggregate detections by class label
+    for HUD display and basic analytics.
 """
+
 
 from __future__ import annotations
 from typing import Any, Dict, List, Optional

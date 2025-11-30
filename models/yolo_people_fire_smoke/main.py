@@ -1,10 +1,29 @@
+# main.py
+"""
+main.py
+
+Entry point for the XRDrone local YOLO pipeline: runs live inference from
+a video source, renders HUD/overlays, and logs merged detections to JSON.
+
+Core responsibilities:
+  - Load separate YOLO models for people detection/segmentation and
+    fire/smoke detection.
+  - Grab frames from a camera stream, run the enabled models, and merge
+    their outputs into unified detection records (via merger.merge_detections).
+  - Draw bounding boxes, optional segmentation masks, and a text HUD with
+    live stats (FPS, model latency, detection counts, dropped-frame estimate).
+  - Provide keyboard toggles for people/fire models, boxes, and seg mode.
+  - Optionally save the composited video and export all detections to a
+    DJI-style JSON log for later alignment with flight telemetry.
+"""
+
 from ultralytics import YOLO
 import cv2, time, numpy as np
 from collections import deque
 from hud import draw_hud, draw_boxes
 from merger import merge_detections, count_by_class
 import pprint
-from detection_log_loader import save_detections_json
+from detection_logger import save_detections_json
 
 # ---- Settings ----
 SAVE_OUTPUT = False

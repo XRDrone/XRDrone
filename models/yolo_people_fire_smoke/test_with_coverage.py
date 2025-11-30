@@ -2,7 +2,6 @@ from ultralytics import YOLO
 import cv2
 import time
 
-
 def test_combined_detection_with_coverage():
     """
     Happy-path test for YOLO people + fire + smoke detection with coverage reporting.

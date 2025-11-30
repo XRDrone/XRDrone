@@ -1,5 +1,21 @@
-import cv2
+# hud.py
+"""
+hud.py
 
+Rendering helpers for the XRDrone on-frame HUD and detection overlays.
+
+This module:
+  - draw_hud(): draws a semi-transparent HUD panel anchored to a corner
+    of an OpenCV BGR frame, showing runtime stats such as FPS, latency,
+    counts per class, and toggle states.
+  - draw_boxes(): draws YOLO bounding boxes plus class labels and
+    confidence percentages using a per-class color map and model.names.
+
+All operations modify the provided frame in place and return the updated
+OpenCV image for real-time display or video encoding.
+"""
+
+import cv2
 
 def draw_hud(
     frame, lines, anchor="tl", margin=10, alpha=0.45, font_scale=0.55, thickness=1
