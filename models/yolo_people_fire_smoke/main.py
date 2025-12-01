@@ -27,8 +27,12 @@ from detection_logger import save_detections_json
 
 # ---- Settings ----
 SAVE_OUTPUT = False
-SHOW_BOXES = True  # toggle with 'O'
-SEG_ON = False  # toggle with 'P' (desired seg setting)
+SHOW_BOXES = True       # toggle with 'O'
+SEG_ON = False          # toggle with 'P' (desired seg setting)
+
+# ---- Privacy & Recording ----
+RECORDING_ENABLED = False # Default: No PII storage
+recording_start_time = None
 TARGET_FPS = 30.0
 
 # ---- Model toggles ----
@@ -214,6 +218,7 @@ while True:
         f"Fire: {fire_count}",
         f"Smoke: {smoke_count}",
         f"Dropped frames (avg/s): {avg_drops:.1f}",
+        f"RECORDING: {'ON' if RECORDING_ENABLED else 'OFF'} (R)",
         f"People model: {'ON' if PEOPLE_ON else 'OFF'} (K)",
         f"Fire model: {'ON' if FIRE_ON else 'OFF'} (L)",
         f"Boxes: {'ON' if SHOW_BOXES else 'OFF'} (O)",
@@ -232,7 +237,17 @@ while True:
     key = cv2.waitKey(1) & 0xFF
     if key == 27:  # ESC
         break
-    elif key in (ord("o"), ord("O")):
+    elif key in (ord('r'), ord('R')): # Privacy toggle
+        if not RECORDING_ENABLED:
+            # Simulate user consent dialog
+            print("[PII] USER_CONSENT: Recording ENABLED by user at", time.strftime("%Y-%m-%d %H:%M:%S"))
+            RECORDING_ENABLED = True
+            recording_start_time = time.time()
+        else:
+            print("[PII] USER_CONSENT: Recording DISABLED at", time.strftime("%Y-%m-%d %H:%M:%S"))
+            RECORDING_ENABLED = False
+            recording_start_time = None
+    elif key in (ord('o'), ord('O')):
         SHOW_BOXES = not SHOW_BOXES
     elif key in (ord("p"), ord("P")):
         SEG_ON = not SEG_ON
@@ -247,6 +262,12 @@ if SAVE_OUTPUT and out is not None:
 cv2.destroyAllWindows()
 if SAVE_OUTPUT:
     print(f"Combined detection video saved to: {output_video}")
+    
+# --- Simulate recording file creation if consent was given ---
+if RECORDING_ENABLED and recording_start_time:
+    # Simulate writing recording metadata
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    print(f"[PII] Writing recording file: recording_{timestamp}.mp4")
 
 # --- Save detection log as JSON with CUSTOM.updateTime-style timestamps ---
 if all_detections:
