@@ -46,4 +46,7 @@ O - Toggle bounding boxes on/off
 P - Toggle segmentation mode on/off
 K - Toggle the people model on/off
 L - Toggle the fire/smoke model on/off
+R - Toggle livestream recording on/off
 ESC - Quit the program / close the live window
+
+deactivate # exiting from virtual environment
