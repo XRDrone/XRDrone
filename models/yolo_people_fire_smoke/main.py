@@ -1,33 +1,56 @@
+# main.py
+"""
+main.py
+
+Entry point for the XRDrone local YOLO pipeline: runs live inference from
+a video source, renders HUD/overlays, and logs merged detections to JSON.
+
+Core responsibilities:
+  - Load separate YOLO models for people detection/segmentation and
+    fire/smoke detection.
+  - Grab frames from a camera stream, run the enabled models, and merge
+    their outputs into unified detection records (via merger.merge_detections).
+  - Draw bounding boxes, optional segmentation masks, and a text HUD with
+    live stats (FPS, model latency, detection counts, dropped-frame estimate).
+  - Provide keyboard toggles for people/fire models, boxes, and seg mode.
+  - Optionally save the composited video and export all detections to a
+    DJI-style JSON log for later alignment with flight telemetry.
+"""
+
 from ultralytics import YOLO
 import cv2, time, numpy as np
 from collections import deque
 from hud import draw_hud, draw_boxes
 from merger import merge_detections, count_by_class
 import pprint
-from detection_log_loader import save_detections_json
+from detection_logger import save_detections_json
 
 # ---- Settings ----
 SAVE_OUTPUT = False
-SHOW_BOXES = True       # toggle with 'O'
-SEG_ON = False          # toggle with 'P' (desired seg setting)
+SHOW_BOXES = True  # toggle with 'O'
+SEG_ON = False  # toggle with 'P' (desired seg setting)
 TARGET_FPS = 30.0
 
 # ---- Model toggles ----
-PEOPLE_ON = True   # toggle with 'K'
-FIRE_ON = True     # toggle with 'L'
+PEOPLE_ON = True  # toggle with 'K'
+FIRE_ON = True  # toggle with 'L'
 
 # Models
-people_det_model = YOLO("../yolo11_models/yolo11n.pt")                        # people detection (boxes)
-people_seg_model = YOLO("../yolo11_models/yolo11n-seg.pt")                    # people instance segmentation (masks+boxes)
-fire_model = YOLO("../yolo11_models/fire_smoke_detection.pt")                 # fire/smoke detection (boxes)
+people_det_model = YOLO("../yolo11_models/yolo11n.pt")  # people detection (boxes)
+people_seg_model = YOLO(
+    "../yolo11_models/yolo11n-seg.pt"
+)  # people instance segmentation (masks+boxes)
+fire_model = YOLO(
+    "../yolo11_models/fire_smoke_detection.pt"
+)  # fire/smoke detection (boxes)
 
-DETECTION_LOG_PATH = "detections_log.json"  
-all_detections = []  
+DETECTION_LOG_PATH = "detections_log.json"
+all_detections = []
 
 colors = {
-    'person': (255, 0, 0),   # Blue
-    'fire':   (255, 0, 255), # Purple
-    'smoke':  (0, 255, 255)  # Yellow
+    "person": (255, 0, 0),  # Blue
+    "fire": (255, 0, 255),  # Purple
+    "smoke": (0, 255, 255),  # Yellow
 }
 
 fps_hist = deque(maxlen=30)
@@ -45,6 +68,7 @@ EXPECTED_FRAME_TIME = 1.0 / TARGET_FPS
 frame_counter = 0
 window_frames = 0
 window_start = time.time()
+
 
 def draw_masks(frame, results, color=(0, 255, 0), alpha=0.35):
     """
@@ -65,14 +89,17 @@ def draw_masks(frame, results, color=(0, 255, 0), alpha=0.35):
 
     # Convert and resize each mask to (H, W)
     for m in masks:
-        m = m.detach().cpu().numpy().astype(np.uint8)         # (h_mask, w_mask) in {0,1}
+        m = m.detach().cpu().numpy().astype(np.uint8)  # (h_mask, w_mask) in {0,1}
         m = cv2.resize(m, (W, H), interpolation=cv2.INTER_NEAREST)
         mask = m.astype(bool)
 
         if mask.any():
-            frame[mask] = (frame[mask] * (1 - alpha) + overlay[mask] * alpha).astype(np.uint8)
+            frame[mask] = (frame[mask] * (1 - alpha) + overlay[mask] * alpha).astype(
+                np.uint8
+            )
 
     return frame
+
 
 frame_id = 0
 while True:
@@ -80,7 +107,6 @@ while True:
     if not ret:
         break
     frame_id += 1
-
 
     now = time.time()
     dt = now - t_prev
@@ -113,10 +139,14 @@ while True:
     if PEOPLE_ON:
         # People: use seg model when effective_seg_on, else det model
         if effective_seg_on:
-            people_results = people_seg_model.predict(frame, conf=0.4, classes=[0], verbose=False)
+            people_results = people_seg_model.predict(
+                frame, conf=0.4, classes=[0], verbose=False
+            )
             people_model_used = people_seg_model
         else:
-            people_results = people_det_model.predict(frame, conf=0.4, classes=[0], verbose=False)
+            people_results = people_det_model.predict(
+                frame, conf=0.4, classes=[0], verbose=False
+            )
             people_model_used = people_det_model
 
     if FIRE_ON:
@@ -139,7 +169,7 @@ while True:
     if merged:
         all_detections.extend(merged)
 
-   # --- Debug ---
+    # --- Debug ---
     # if frame_counter == 5:
     #     print("\n=== MERGER OUTPUT ===")
     #     pprint.pprint(merged)
@@ -156,7 +186,7 @@ while True:
             frame = draw_boxes(frame, fire_results, colors, fire_model)
 
     if effective_seg_on:
-        frame = draw_masks(frame, people_results, color=colors['person'], alpha=0.35)
+        frame = draw_masks(frame, people_results, color=colors["person"], alpha=0.35)
 
     # --- timings / stats ---
     inf_times = []
@@ -188,7 +218,7 @@ while True:
         f"Fire model: {'ON' if FIRE_ON else 'OFF'} (L)",
         f"Boxes: {'ON' if SHOW_BOXES else 'OFF'} (O)",
         # Show desired SEG_ON state even if People model is OFF
-        f"Seg setting: {'ON' if SEG_ON else 'OFF'} (P)"
+        f"Seg setting: {'ON' if SEG_ON else 'OFF'} (P)",
     ]
     frame = draw_hud(frame, lines, anchor="tl")
 
@@ -202,13 +232,13 @@ while True:
     key = cv2.waitKey(1) & 0xFF
     if key == 27:  # ESC
         break
-    elif key in (ord('o'), ord('O')):
+    elif key in (ord("o"), ord("O")):
         SHOW_BOXES = not SHOW_BOXES
-    elif key in (ord('p'), ord('P')):
+    elif key in (ord("p"), ord("P")):
         SEG_ON = not SEG_ON
-    elif key in (ord('k'), ord('K')):
+    elif key in (ord("k"), ord("K")):
         PEOPLE_ON = not PEOPLE_ON
-    elif key in (ord('l'), ord('L')):
+    elif key in (ord("l"), ord("L")):
         FIRE_ON = not FIRE_ON
 
 cap.release()
