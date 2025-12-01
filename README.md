@@ -84,6 +84,8 @@ In addition to live operation, XRDrone supports **post-flight telemetry review**
 
 ---
 
+## 🖥️ Tech Stack 
+
 ### 🛰️ Drone + Streaming
 - DJI Neo + RC 2  
 - FFmpeg (USB capture → WHIP)  
@@ -113,25 +115,37 @@ In addition to live operation, XRDrone supports **post-flight telemetry review**
 
 ---
 
-## 📚 Dataset Citations
+## 📚 Citations
 
-### **WiSARD Dataset**
+### **Ultralytics YOLO11**
+```
 @inproceedings{BroylesHaynerEtAl2022,
   author = {Broyles, D.* and Hayner, C.* and Leung, K.},
   booktitle = {{IEEE/RSJ Int.\ Conf.\ on Intelligent Robots \& Systems}},
   title = {{WiSARD}: A Labeled Visual and Thermal Image Dataset for Wilderness Search and Rescue},
   year = {2022},
 }
+```
 
----
+### **WiSARD Dataset**
+```
+@inproceedings{BroylesHaynerEtAl2022,  
+  author = {Broyles, D.* and Hayner, C.* and Leung, K.},  
+  booktitle = {{IEEE/RSJ Int.\ Conf.\ on Intelligent Robots \& Systems}},  
+  title = {{WiSARD}: A Labeled Visual and Thermal Image Dataset for Wilderness Search and Rescue},  
+  year = {2022},  
+}
+```
 
-### **AeroScapes Dataset**
-**Primary Research Paper:**  
+### **AeroScapes Dataset (Primary Paper)**
+```
 Ensemble Knowledge Transfer for Semantic Segmentation
 Ishan Nigam, Chen Huang, Deva Ramanan
 Proceedings of the 2018 IEEE Winter Conference on Applications of Computer Vision
+```
 
-**Dataset Ninja Tools Reference:**  
+### **AeroScapes Visualization Tools (Dataset Ninja)**
+```
 @misc{ visualization-tools-for-aeroscapes-dataset,
   title = { Visualization Tools for AeroScapes Dataset },
   type = { Computer Vision Tools },
@@ -142,8 +156,9 @@ Proceedings of the 2018 IEEE Winter Conference on Applications of Computer Visio
   publisher = { Dataset Ninja },
   year = { 2025 },
   month = { nov },
-  note = { visited on 2025-11-28 },
+  note = { visited on 2025-11-30 },
 }
+```
 
 ---
 

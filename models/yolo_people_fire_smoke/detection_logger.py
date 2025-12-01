@@ -1,8 +1,17 @@
-# output_formatter.py
+# detection_log_loader.py
 """
-Takes merged detections from merger.py and writes them to JSON
-with a local timestamp string that matches DJI's CUSTOM.updateTime [local],
-e.g. "7:05:08.97 PM".
+detection_log_loader.py
+
+Utility functions for turning merged YOLO detections into a compact JSON
+log that can be aligned with DJI telemetry and Cesium timelines.
+
+This module:
+  - Converts UNIX timestamps into DJI-style local time strings with
+    centisecond precision (e.g., "7:05:08.97 PM").
+  - Normalizes raw detection dicts into JSON-safe packets with Epoch +
+    local timestamps, class, confidence, bbox, source, and a has_mask flag.
+  - Writes a flat list of these packets to detections_log.json (or a
+    caller-specified path) for downstream syncing and analysis.
 """
 
 from __future__ import annotations
@@ -16,10 +25,10 @@ def format_timestamp_local(ts: float) -> str:
     Convert a UNIX timestamp (seconds since epoch) to a local time string
     like "7:05:08.97 PM" (centisecond precision, 12-hour clock).
     """
-    dt = datetime.fromtimestamp(ts)   # local time
+    dt = datetime.fromtimestamp(ts)  # local time
     # 12-hour time without leading zero in the hour
-    base = dt.strftime("%I:%M:%S")   # e.g. "07:05:08"
-    base = base.lstrip("0")          # -> "7:05:08"
+    base = dt.strftime("%I:%M:%S")  # e.g. "07:05:08"
+    base = base.lstrip("0")  # -> "7:05:08"
 
     # centiseconds (0.01s) similar to log format
     centiseconds = int((ts * 100) % 100)
