@@ -1,0 +1,3 @@
+[submodule "tools/dji-log-parser"]
+	path = tools/dji-log-parser
+	url = https://github.com/lvauvillier/dji-log-parser.git
