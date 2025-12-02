@@ -13,7 +13,7 @@ XRDrone is a real-time drone-to-VR system for fire-rescue scenarios that streams
 
 The system provides a cockpit-style HUD showing **FPS, model latency, detection counts (people/fire/smoke), and dropped frames**, updating at least once per second without obstructing the operator’s view.
 
-In addition to live operation, XRDrone supports **post-flight telemetry review** by parsing DJI Assistant 2 flight logs and generating a **3D Cesium visualization** of the drone’s flight path and key telemetry values for after-action analysis.
+In addition to live operation, XRDrone supports **post-flight telemetry review** by parsing DJI RC 2 flight logs and generating a **3D Cesium visualization** of the drone’s flight path and key telemetry values for after-action analysis.
 
 ### Core Objectives
 
@@ -29,7 +29,7 @@ In addition to live operation, XRDrone supports **post-flight telemetry review**
 - **Privacy & Ethics:**  
   **Store no PII by default**; any recording requires **explicit opt-in** with a confirmation dialog and consent timestamping, respecting dataset licensing and privacy constraints.
 - **Post-Flight Telemetry Review:**  
-  Parse **DJI Assistant 2 log files** and generate a **3D Cesium-based post-flight visualization** of the drone’s trajectory and key telemetry for after-action review.
+  Parse **DJI RC 2 log files** and generate a **3D Cesium-based post-flight visualization** of the drone’s trajectory and key telemetry for after-action review.
 - **Engineering Deliverables:**  
   Provide clear **architecture documentation**, **measurement methods** (FPS/latency/inference), runtime **profiling & logs**, and a **one-command reproducible build**.
 
@@ -50,7 +50,7 @@ In addition to live operation, XRDrone supports **post-flight telemetry review**
 | **REQ-008** | HUD displays **FPS, model latency, detection counts (people/fire/smoke), and dropped frames** | Should | Each value updates ≥1/s, remains visible, and does not obstruct the video feed |
 | **REQ-009** | Visually differentiate **low-confidence detections** | Should | Detections below threshold use alternate styling (e.g., dashed/faded); at least two confidence levels shown |
 | **REQ-010 (NFR-Reliability/Stability)** | Operate **≥ 5 minutes** continuously with no crashes or major FPS degradation | Should | System runs ≥5 minutes with FPS never <20; logs show stable CPU/GPU and no fatal errors |
-| **REQ-011** | Support **post-flight telemetry review** using DJI Assistant 2 log files | Should | Parse `.txt` logs, upload telemetry to Cesium, and generate a 3D post-flight visualization of trajectory and key metrics |
+| **REQ-011** | Support **post-flight telemetry review** using DJI RC 2 log files | Should | Parse `.txt` logs, upload telemetry to Cesium, and generate a 3D post-flight visualization of trajectory and key metrics |
 
 
 ---
