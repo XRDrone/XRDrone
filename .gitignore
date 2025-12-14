@@ -1,5 +1,6 @@
 .env
 datasets/
-training/
+
 *.csv
 *.json
+training/human_detection/runs
