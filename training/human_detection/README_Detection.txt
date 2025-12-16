@@ -15,7 +15,7 @@ python -m pip install -U ultralytics torch
 
 4) Now run the training script:
 
-python train_wisard_yolo11n_960.py
+python train_wisard_yolo11_960.py
 
 5) Watch your models updates:
 
