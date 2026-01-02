@@ -1,9 +1,4 @@
 # main.py
-"""
-XRDrone local YOLO pipeline: runs video inference,
-renders HUD/masks, and logs merged results to JSON.
-"""
-
 from ultralytics import YOLO
 import cv2, time, numpy as np
 from collections import deque
@@ -12,30 +7,20 @@ from merger import merge_detections, count_by_class
 from detection_logger import save_detections_json
 from types import SimpleNamespace
 import torch
+import settings as S
 
 print("torch:", torch.__version__)
 print("cuda available:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("gpu:", torch.cuda.get_device_name(0))
 
-VIDEO_PATH = r"E:\Detection_Segmentation_Demo.mp4"
-
-SAVE_OUTPUT = False
-OUTPUT_VIDEO = "Segmentation_Aeroscapes.mp4"
-OUTPUT_CODEC = "mp4v"
-
-DEVICE = 0 if torch.cuda.is_available() else "cpu"
-USE_FP16 = bool(torch.cuda.is_available())
-IMGSZ = 960
-
-RECORDING_ENABLED = False  # 'R'
+PEOPLE_ON = S.PEOPLE_ON_DEFAULT
+FIRE_ON = S.FIRE_ON_DEFAULT
+RECORDING_ENABLED = S.RECORDING_ENABLED_DEFAULT
 recording_start_time = None
 
-PEOPLE_ON = True  # 'K' (people model inference on/off)
-FIRE_ON = False   # 'L' (fire/smoke model inference on/off)
-
-people_seg_model = YOLO("../yolo11_models/yolo11n-seg.pt")
-fire_model = YOLO("../yolo11_models/fire_smoke_detection.pt")
+people_seg_model = YOLO(S.PEOPLE_MODEL_PATH)
+fire_model = YOLO(S.FIRE_MODEL_PATH)
 
 def _normalize_names(names):
     if isinstance(names, dict):
@@ -75,7 +60,7 @@ if torch.cuda.is_available():
 
 for m in (people_seg_model, fire_model):
     try:
-        m.to(DEVICE)
+        m.to(S.DEVICE)
     except Exception:
         pass
     try:
@@ -83,39 +68,43 @@ for m in (people_seg_model, fire_model):
     except Exception:
         pass
 
-PRED_KW = dict(device=DEVICE, half=USE_FP16, imgsz=IMGSZ, verbose=False)
+PRED_KW = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
 
-DETECTION_LOG_PATH = "detections_log.json"
 all_detections = []
-
-colors = {
-    "person": (255, 0, 0),
-    "fire": (255, 0, 255),
-    "smoke": (0, 255, 255),
-}
-
 fps_hist = deque(maxlen=30)
 inf_hist = deque(maxlen=30)
 drop_hist = deque(maxlen=30)
 t_prev = time.time()
 
-cap = cv2.VideoCapture(0)  # use VIDEO_PATH instead if you want file input
+cap = cv2.VideoCapture(S.VIDEO_SOURCE)
 if not cap.isOpened():
-    raise RuntimeError("Could not open video source: 0")
+    raise RuntimeError(f"Could not open video source: {S.VIDEO_SOURCE}")
 
-input_fps = cap.get(cv2.CAP_PROP_FPS)
-if not input_fps or input_fps <= 1:
-    input_fps = 30.0
-TARGET_FPS = float(input_fps)
+input_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+TARGET_FPS = input_fps if input_fps > 1 else S.DEFAULT_FPS
 
-fourcc = cv2.VideoWriter_fourcc(*OUTPUT_CODEC)
+fourcc = cv2.VideoWriter_fourcc(*S.OUTPUT_CODEC)
 out = None
 
 video_start_wall = time.time()
-frame_counter = 0
 window_frames = 0
 window_start = time.time()
 frame_id = 0
+is_file_source = isinstance(S.VIDEO_SOURCE, str)
+
+def _attach_masks_to_merged(merged, results, source_key):
+    if not results:
+        return
+    r0 = results[0]
+    if r0.masks is None or r0.masks.data is None:
+        return
+    masks = r0.masks.data.detach().cpu().numpy()
+    mi = 0
+    for d in merged:
+        if d.get("source") == source_key:
+            if mi < len(masks):
+                d["mask"] = masks[mi]
+            mi += 1
 
 def draw_masks(
     frame,
@@ -210,8 +199,11 @@ while True:
         break
     frame_id += 1
 
-    t_video = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
-    now = video_start_wall + t_video
+    if is_file_source:
+        t_video = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+        now = video_start_wall + t_video
+    else:
+        now = time.time()
 
     wall_now = time.time()
     dt = wall_now - t_prev
@@ -219,7 +211,6 @@ while True:
     if dt > 0:
         fps_hist.append(1.0 / dt)
 
-    frame_counter += 1
     window_frames += 1
     if wall_now - window_start >= 1.0:
         window_len = wall_now - window_start
@@ -234,23 +225,23 @@ while True:
 
     if PEOPLE_ON:
         people_results = people_seg_model.predict(
-            frame, conf=0.4, classes=[PERSON_CLASS], **PRED_KW
+            frame, conf=S.PEOPLE_CONF, classes=[PERSON_CLASS], **PRED_KW
         )
-        people_label_used = people_seg_label
-    else:
-        people_label_used = people_seg_label
 
     if FIRE_ON:
-        fire_results = fire_model.predict(frame, conf=0.25, **PRED_KW)
+        fire_results = fire_model.predict(frame, conf=S.FIRE_CONF, **PRED_KW)
 
     merged = merge_detections(
         people_results,
         fire_results,
-        people_model=people_label_used,
+        people_model=people_seg_label,
         fire_model=fire_label,
-        seg_on=PEOPLE_ON,  # only true when people seg model is running
+        seg_on=bool(PEOPLE_ON and S.ATTACH_PEOPLE_MASKS_TO_LOG),
         timestamp=now,
     )
+
+    if FIRE_ON and S.ATTACH_FIRE_MASKS_TO_LOG:
+        _attach_masks_to_merged(merged, fire_results, "fire")
 
     for det in merged:
         det["frame_id"] = frame_id
@@ -268,9 +259,11 @@ while True:
         frame = draw_masks(
             frame,
             people_results,
-            names=people_label_used.names,
-            color=colors["person"],
-            alpha=0.35,
+            names=people_seg_label.names,
+            color=S.COLORS["person"],
+            alpha=S.MASK_ALPHA,
+            text_scale=S.MASK_TEXT_SCALE,
+            text_thickness=S.MASK_TEXT_THICKNESS,
         )
 
     if FIRE_ON:
@@ -278,8 +271,10 @@ while True:
             frame,
             fire_results,
             names=fire_label.names,
-            color=colors["fire"],
-            alpha=0.35,
+            color=S.COLORS["fire"],
+            alpha=S.MASK_ALPHA,
+            text_scale=S.MASK_TEXT_SCALE,
+            text_thickness=S.MASK_TEXT_THICKNESS,
         )
 
     inf_times = []
@@ -290,9 +285,9 @@ while True:
     if inf_times:
         inf_hist.append(sum(inf_times) / len(inf_times))
 
-    avg_fps = sum(fps_hist) / len(fps_hist) if fps_hist else 0
-    avg_inf = sum(inf_hist) / len(inf_hist) if inf_hist else 0
-    avg_drops = sum(drop_hist) / len(drop_hist) if drop_hist else 0
+    avg_fps = sum(fps_hist) / len(fps_hist) if fps_hist else 0.0
+    avg_inf = sum(inf_hist) / len(inf_hist) if inf_hist else 0.0
+    avg_drops = sum(drop_hist) / len(drop_hist) if drop_hist else 0.0
 
     people_count = counts.get("person", 0) + counts.get("item", 0)
     fire_count = counts.get("fire", 0)
@@ -309,20 +304,29 @@ while True:
         f"People model: {'ON' if PEOPLE_ON else 'OFF'} (K)",
         f"Fire/Smoke model: {'ON' if FIRE_ON else 'OFF'} (L)",
     ]
-    frame = draw_hud(frame, lines, anchor="tl")
+    frame = draw_hud(
+        frame,
+        lines,
+        anchor=S.HUD_ANCHOR,
+        margin=S.HUD_MARGIN,
+        alpha=S.HUD_ALPHA,
+        font_scale=S.HUD_FONT_SCALE,
+        thickness=S.HUD_THICKNESS,
+    )
 
-    if SAVE_OUTPUT and out is None:
-        h, w = frame.shape[:2]
-        out = cv2.VideoWriter(OUTPUT_VIDEO, fourcc, TARGET_FPS, (w, h))
-    if SAVE_OUTPUT and out is not None:
+    allow_output = (not S.REQUIRE_CONSENT_FOR_OUTPUT) or RECORDING_ENABLED
+    if S.SAVE_OUTPUT and allow_output:
+        if out is None:
+            h, w = frame.shape[:2]
+            out = cv2.VideoWriter(S.OUTPUT_VIDEO, fourcc, TARGET_FPS, (w, h))
         out.write(frame)
 
-    cv2.imshow("Live Pipeline", frame)
+    cv2.imshow(S.WINDOW_NAME, frame)
     key = cv2.waitKey(1) & 0xFF
 
-    if key == 27:
+    if key == S.KEY_ESC:
         break
-    elif key in (ord("r"), ord("R")):
+    if key in S.KEY_TOGGLE_RECORDING:
         if not RECORDING_ENABLED:
             print("[PII] USER_CONSENT: Recording ENABLED by user at", time.strftime("%Y-%m-%d %H:%M:%S"))
             RECORDING_ENABLED = True
@@ -331,22 +335,16 @@ while True:
             print("[PII] USER_CONSENT: Recording DISABLED at", time.strftime("%Y-%m-%d %H:%M:%S"))
             RECORDING_ENABLED = False
             recording_start_time = None
-    elif key in (ord("k"), ord("K")):
+    elif key in S.KEY_TOGGLE_PEOPLE:
         PEOPLE_ON = not PEOPLE_ON
-    elif key in (ord("l"), ord("L")):
+    elif key in S.KEY_TOGGLE_FIRE:
         FIRE_ON = not FIRE_ON
 
 cap.release()
-if SAVE_OUTPUT and out is not None:
+if out is not None:
     out.release()
 cv2.destroyAllWindows()
 
-if SAVE_OUTPUT:
-    print(f"Video saved to: {OUTPUT_VIDEO}")
-
-if RECORDING_ENABLED and recording_start_time:
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    print(f"[PII] Writing recording file: recording_{timestamp}.mp4")
-
-if all_detections:
-    save_detections_json(all_detections, DETECTION_LOG_PATH)
+allow_log = (not S.REQUIRE_CONSENT_FOR_LOG) or RECORDING_ENABLED
+if all_detections and allow_log:
+    save_detections_json(all_detections, S.DETECTION_LOG_PATH)
