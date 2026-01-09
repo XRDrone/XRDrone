@@ -1,5 +1,9 @@
 .env
 datasets/
-training/
 *.csv
 *.json
+training/human_detection/runs
+training/human_segmentation/runs
+*.mp4
+*.pt
+models/yolo_people_fire_smoke/__pycache__
