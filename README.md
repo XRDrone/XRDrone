@@ -7,51 +7,14 @@
 
 ---
 
-## 🛰️ Project Overview
+## Project Overview 🌍
 
-XRDrone is a real-time drone-to-VR system for fire-rescue scenarios that streams live video from a DJI Neo into a Meta Quest headset, performs on-device detection of **fire, smoke, and humans**, and renders results as **stable, legible spatial overlays** inside a VR scene. These overlays use **depth-like and altitude-like cues** rather than true geo-referenced or world-relative positioning, consistent with the telemetry available from the DJI Neo.
+XRDrone delivers an end-to-end pipeline from **drone imagery to VR visualization**. A DJI Mavic Pro captures geo-tagged imagery, which XRDrone processes with **OpenDroneMap (WebODM)** to produce georeferenced point clouds or textured meshes. Results are uploaded via the **WebODM–Cesium plugin** to **Cesium ion** as 3D Tiles.
 
-The system provides a cockpit-style HUD showing **FPS, model latency, detection counts (people/fire/smoke), and dropped frames**, updating at least once per second without obstructing the operator’s view.
+XRDrone’s **Unity** application, powered by the **Cesium for Unity** plugin, streams these 3D Tiles into an immersive **Oculus Quest 2/3** VR experience. Users interact with the environment through **text-based natural language commands**, sent to the **OpenAI API (GPT)** and translated into in-scene actions such as annotation, highlighting, and simulation (e.g., *“highlight all trees”* or *“simulate fire”*).
 
-In addition to live operation, XRDrone supports **post-flight telemetry review** by parsing DJI RC 2 flight logs and generating a **3D Cesium visualization** of the drone’s flight path and key telemetry values for after-action analysis.
-
-### Core Objectives
-
-- **Video → Quest (Performance & Latency):**  
-  Stream **≥720p** at **≥24 FPS** with **≤2% dropped frames** over a 3-minute test, achieve **≤300 ms median glass-to-glass latency**, and render on a **curved surface** to minimize distortion inside VR.
-- **On-Device Vision (Classes & Quality):**  
-  Run **on-headset inference** at **≥15 FPS** for **fire, smoke, and humans** and achieve **F1 ≥ 0.5** on **≥150** evaluation frames relevant to forest-fire scenarios.
-- **Spatial Overlays & HUD (UX):**  
-  Render **stable, legible spatial overlays** using **depth-like and altitude-like cues** (no world-relative or geo-referenced positioning).  
-  HUD displays **FPS, model latency, detection counts (people/fire/smoke), and dropped frames**, all updating at least once per second and remaining unobtrusive.
-- **Reliability & Safety:**  
-  **Recover from forced disconnects** without requiring an app restart and **operate ≥5 minutes** continuously with no crashes and no severe FPS degradation.
-- **Privacy & Ethics:**  
-  **Store no PII by default**; any recording requires **explicit opt-in** with a confirmation dialog and consent timestamping, respecting dataset licensing and privacy constraints.
-- **Post-Flight Telemetry Review:**  
-  Parse **DJI RC 2 log files** and generate a **3D Cesium-based post-flight visualization** of the drone’s trajectory and key telemetry for after-action review.
-- **Engineering Deliverables:**  
-  Provide clear **architecture documentation**, **measurement methods** (FPS/latency/inference), runtime **profiling & logs**, and a **one-command reproducible build**.
-
-
----
-
-## 📊 Acceptance Criteria — Consolidated Requirements
-
-| ID | Requirement | Priority | Acceptance Evidence |
-|----|------------|----------|---------------------|
-| **REQ-001** | Stream live DJI Neo video to the headset at **≥ 720p** | Must | Verified via headset capture resolution metadata |
-| **REQ-002 (NFR-Performance)** | Maintain **≥ 24 FPS** with **≤ 2% dropped frames** over **3 min** | Must | Log average FPS & drop rate via profiler |
-| **REQ-003 (NFR-Performance)** | Achieve **≤ 300 ms median** glass-to-glass latency | Must | Measured via timestamp overlay + external camera |
-| **REQ-004 (NFR-Performance)** | Run fire/smoke/human detection **on-device** at **≥ 15 FPS** | Must | On-device profiling shows sustained ≥ 15 inference FPS |
-| **REQ-005 (NFR-Quality)** | Achieve **F1 ≥ 0.5** on **≥ 150** evaluation frames | Must | Standard precision/recall evaluation report |
-| **REQ-006 (NFR-Privacy/Ethics)** | Store **no PII by default**; recording must be **explicitly user-enabled** | Must | Recording off by default; enabling requires UI toggle + confirmation dialog + consent timestamp; no PII written unless consented |
-| **REQ-007** | Render detected objects as **stable spatial overlays** using **depth/altitude cues**, without world-relative or geo-referenced positioning | Must | Live VR demo shows overlays are stable, legible, depth-cued; ≥3 object types; evaluated qualitatively (no ground-truth required) |
-| **REQ-008** | HUD displays **FPS, model latency, detection counts (people/fire/smoke), and dropped frames** | Should | Each value updates ≥1/s, remains visible, and does not obstruct the video feed |
-| **REQ-009** | Visually differentiate **low-confidence detections** | Should | Detections below threshold use alternate styling (e.g., dashed/faded); at least two confidence levels shown |
-| **REQ-010 (NFR-Reliability/Stability)** | Operate **≥ 5 minutes** continuously with no crashes or major FPS degradation | Should | System runs ≥5 minutes with FPS never <20; logs show stable CPU/GPU and no fatal errors |
-| **REQ-011** | Support **post-flight telemetry review** using DJI RC 2 log files | Should | Parse `.txt` logs, upload telemetry to Cesium, and generate a 3D post-flight visualization of trajectory and key metrics |
-
+**Workflow:**  
+**drone → WebODM → Cesium ion → Unity VR → LLM-driven interaction**
 
 ---
 
