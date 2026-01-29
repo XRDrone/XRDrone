@@ -11,7 +11,11 @@ import json
 import time
  
 RTSP_URL = "rtsp://127.0.0.1:8554/stream"
- 
+  
+#FPS Measurement Setup
+t0 = time.time()
+count = 0
+
 # ---- Open webcam (built-in camera) ----
 cap = cv2.VideoCapture(0)  # try 0 first; 1,2,... if needed
 if not cap.isOpened():
@@ -169,6 +173,13 @@ while True:
         print("FFmpeg pipe closed.")
 
         break
+     
+    # FPS Calculation
+    count += 1
+    if time.time() - t0 >= 1.0:
+        print(f"[MEASURE] actual_loop_fps={count/(time.time()-t0):.2f}")
+        t0 = time.time()
+        count = 0
  
 # ---- Cleanup ----
 
@@ -183,5 +194,6 @@ ffmpeg.wait()
 sock.close()
 
 print("Stopped.")
+
 
  
