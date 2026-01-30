@@ -4,7 +4,7 @@ XRDrone local pipeline settings.
 
 This file centralizes all runtime configuration for the local YOLO
 inference demo (video source, model paths, thresholds, HUD, logging, keys,
-and (NEW) network streaming).
+and network streaming).
 Edit values here; main.py should not contain hard-coded settings.
 """
 
@@ -17,7 +17,7 @@ import torch
 VIDEO_PATH = r"E:\Detection_Segmentation_Demo.mp4"  # file path if using video file input
 VIDEO_SOURCE = 0  # legacy: set to VIDEO_PATH for file input, or keep as camera index (e.g., 0)
 
-# NEW: Input mode + camera source toggle
+# Input mode + camera source toggle
 # INPUT_MODE:
 #   - "camera": read from webcam/capture-card
 #   - "file":   read from VIDEO_PATH
@@ -38,7 +38,7 @@ OUTPUT_VIDEO = "Segmentation_Aeroscapes.mp4"
 OUTPUT_CODEC = "mp4v"
 
 # -----------------------------
-# Network streaming (NEW)
+# Network streaming
 # -----------------------------
 ENABLE_RTSP = False
 RTSP_URL = "rtsp://127.0.0.1:8554/stream"
@@ -50,7 +50,7 @@ UDP_PORT = 5005
 # If True, RTSP/UDP only run while RECORDING is enabled (mirrors consent gating).
 REQUIRE_CONSENT_FOR_NETWORK = False
 
-# Unity class-id mapping for UDP packets (you can change IDs to match your Unity side)
+# Unity class-id mapping for UDP packets
 UNITY_CLASS_ID = {
     "person": 0,
     "fire": 1,
@@ -71,7 +71,7 @@ REQUIRE_CONSENT_FOR_LOG = True
 # Models
 # -----------------------------
 PEOPLE_MODEL_PATH = "../yolo11_models/yolo11n-seg.pt"              # instance segmentation model
-FIRE_MODEL_PATH = "../yolo11_models/fire_smoke_detection.pt"       # fire/smoke model (det/seg depending on weights)
+FIRE_MODEL_PATH = "../yolo11_models/fire_smoke_detection.pt"       # fire/smoke model
 
 # Confidence thresholds passed into Ultralytics predict()
 PEOPLE_CONF = 0.40
@@ -96,6 +96,10 @@ PEOPLE_ON_DEFAULT = True
 FIRE_ON_DEFAULT = False
 RECORDING_ENABLED_DEFAULT = False
 
+# NEW: Visual overlay toggle (drawing only)
+# If False, no masks/boxes/labels are drawn, but inference + merge + UDP still run.
+DRAW_DETECTIONS_DEFAULT = True
+
 # -----------------------------
 # Mask rendering
 # -----------------------------
@@ -103,7 +107,7 @@ MASK_ALPHA = 0.35
 MASK_TEXT_SCALE = 0.6
 MASK_TEXT_THICKNESS = 2
 
-# If True, attempts to attach mask arrays into the merged detection dicts (can bloat logs)
+# If True, attempts to attach mask arrays into the merged detection dicts (can bloat memory/log size)
 ATTACH_PEOPLE_MASKS_TO_LOG = True
 ATTACH_FIRE_MASKS_TO_LOG = True
 
@@ -132,5 +136,8 @@ KEY_TOGGLE_RECORDING = (ord("r"), ord("R"))
 KEY_TOGGLE_PEOPLE = (ord("k"), ord("K"))
 KEY_TOGGLE_FIRE = (ord("l"), ord("L"))
 
-# NEW: toggle camera input (webcam <-> capture_card) while running (only when INPUT_MODE="camera")
+# Toggle camera input (webcam <-> capture_card) while running (only when INPUT_MODE="camera")
 KEY_TOGGLE_INPUT = (ord("i"), ord("I"))
+
+# NEW: Toggle visual overlays (masks/boxes/labels). UDP unaffected.
+KEY_TOGGLE_DRAW = (ord("v"), ord("V"))

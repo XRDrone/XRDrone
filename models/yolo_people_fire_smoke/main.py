@@ -1,4 +1,3 @@
-# main.py
 from ultralytics import YOLO
 import cv2, time, numpy as np
 from collections import deque
@@ -23,6 +22,9 @@ PEOPLE_ON = S.PEOPLE_ON_DEFAULT
 FIRE_ON = S.FIRE_ON_DEFAULT
 RECORDING_ENABLED = S.RECORDING_ENABLED_DEFAULT
 recording_start_time = None
+
+# NEW: drawing toggle (visuals only; UDP still runs)
+DRAW_DETECTIONS = S.DRAW_DETECTIONS_DEFAULT
 
 # Track which camera we are using at runtime (only relevant when INPUT_MODE="camera")
 ACTIVE_CAMERA_SOURCE = S.CAMERA_SOURCE_DEFAULT  # "webcam" | "capture_card"
@@ -126,15 +128,17 @@ def draw_masks(
         if mask_data is not None:
             m = mask_data[i]
             m = (m > 0.5)
-            # alpha blend into frame
-            frame[m] = (frame[m].astype(np.float32) * (1.0 - alpha) + color_arr * alpha).astype(np.uint8)
+            frame[m] = (
+                frame[m].astype(np.float32) * (1.0 - alpha) + color_arr * alpha
+            ).astype(np.uint8)
 
         cls_id = int(cls[i]) if i < len(cls) else 0
         name = str(names.get(cls_id, "obj"))
         label = f"{name} {float(conf[i]):.2f}"
 
-        # label background
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness)
+        (tw, th), _ = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness
+        )
         tx = max(0, min(w_img - tw - 6, x1i))
         ty = max(th + 6, min(h_img - 2, y1i))
         bx1, by1 = tx, ty - th - 6
@@ -155,10 +159,6 @@ def draw_masks(
 
 
 def _attach_masks_to_merged(merged, yolo_results, source_prefix: str):
-    """
-    Attach numpy masks into merged detection dicts by source order.
-    This is optional (and can bloat memory/log size); controlled by settings.
-    """
     if not yolo_results:
         return
     r = yolo_results[0]
@@ -167,7 +167,6 @@ def _attach_masks_to_merged(merged, yolo_results, source_prefix: str):
         return
 
     mask_data = masks.data.detach().cpu().numpy()  # (n, h, w)
-    # Find merged detections from this source and attach masks in order
     idx = 0
     for det in merged:
         if str(det.get("source", "")).lower().startswith(source_prefix.lower()):
@@ -206,7 +205,6 @@ def _open_capture(input_mode: str, camera_source: str):
         target_fps = input_fps if input_fps > 1 else S.DEFAULT_FPS
         return cap, True, target_fps, time.time(), f"file: {S.VIDEO_PATH}"
 
-    # camera mode
     cam = camera_source.lower().strip()
     if cam == "capture_card":
         index = int(S.CAPTURE_CARD_INDEX)
@@ -222,7 +220,9 @@ def _open_capture(input_mode: str, camera_source: str):
         backend_desc = "auto"
 
     if not cap.isOpened():
-        raise RuntimeError(f"Could not open camera index={index} backend={backend_desc}")
+        raise RuntimeError(
+            f"Could not open camera index={index} backend={backend_desc}"
+        )
 
     input_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
     target_fps = input_fps if input_fps > 1 else S.DEFAULT_FPS
@@ -235,7 +235,9 @@ inf_hist = deque(maxlen=30)
 drop_hist = deque(maxlen=30)
 t_prev = time.time()
 
-cap, is_file_source, TARGET_FPS, video_start_wall, input_desc = _open_capture(S.INPUT_MODE, ACTIVE_CAMERA_SOURCE)
+cap, is_file_source, TARGET_FPS, video_start_wall, input_desc = _open_capture(
+    S.INPUT_MODE, ACTIVE_CAMERA_SOURCE
+)
 
 fourcc = cv2.VideoWriter_fourcc(*S.OUTPUT_CODEC)
 out = None
@@ -244,7 +246,6 @@ window_frames = 0
 window_start = time.time()
 frame_id = 0
 
-# Network I/O (RTSP / UDP)
 rtsp = RTSPStreamer(S.RTSP_URL, fps=TARGET_FPS) if S.ENABLE_RTSP else None
 udp = UDPPublisher(S.UDP_IP, S.UDP_PORT) if S.ENABLE_UDP else None
 
@@ -259,8 +260,6 @@ while True:
         break
     frame_id += 1
 
-    # Timestamp: for file sources, align to playback time like existing code;
-    # for camera sources, use wall clock.
     if is_file_source:
         t_video = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
         now = video_start_wall + t_video
@@ -317,7 +316,8 @@ while True:
 
     counts = count_by_class(merged)
 
-    if PEOPLE_ON:
+    # NEW: drawing is gated; inference/merge/UDP are NOT.
+    if DRAW_DETECTIONS and PEOPLE_ON:
         frame = draw_masks(
             frame,
             people_results,
@@ -328,7 +328,7 @@ while True:
             text_thickness=S.MASK_TEXT_THICKNESS,
         )
 
-    if FIRE_ON:
+    if DRAW_DETECTIONS and FIRE_ON:
         frame = draw_masks(
             frame,
             fire_results,
@@ -364,6 +364,7 @@ while True:
         f"Smoke: {smoke_count}",
         f"Dropped frames (avg/s): {avg_drops:.1f}",
         f"Input: {input_desc}",
+        f"Det overlays: {'ON' if DRAW_DETECTIONS else 'OFF'} (V)",
         f"RTSP: {'ON' if (rtsp and net_on) else 'OFF'}",
         f"UDP:  {'ON' if (udp and net_on) else 'OFF'}",
         f"RECORDING: {'ON' if RECORDING_ENABLED else 'OFF'} (R)",
@@ -381,7 +382,6 @@ while True:
         thickness=S.HUD_THICKNESS,
     )
 
-    # Save output video (existing behavior)
     allow_output = (not S.REQUIRE_CONSENT_FOR_OUTPUT) or RECORDING_ENABLED
     if S.SAVE_OUTPUT and allow_output:
         if out is None:
@@ -389,7 +389,7 @@ while True:
             out = cv2.VideoWriter(S.OUTPUT_VIDEO, fourcc, TARGET_FPS, (w, h))
         out.write(frame)
 
-    # NEW: UDP + RTSP streaming (consolidated from test_udp.py)
+    # UDP/RTSP remain independent of DRAW_DETECTIONS.
     if net_on:
         if udp is not None:
             h, w = frame.shape[:2]
@@ -418,11 +418,17 @@ while True:
 
     if key in S.KEY_TOGGLE_RECORDING:
         if not RECORDING_ENABLED:
-            print("[PII] USER_CONSENT: Recording ENABLED by user at", time.strftime("%Y-%m-%d %H:%M:%S"))
+            print(
+                "[PII] USER_CONSENT: Recording ENABLED by user at",
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+            )
             RECORDING_ENABLED = True
             recording_start_time = time.time()
         else:
-            print("[PII] USER_CONSENT: Recording DISABLED at", time.strftime("%Y-%m-%d %H:%M:%S"))
+            print(
+                "[PII] USER_CONSENT: Recording DISABLED at",
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+            )
             RECORDING_ENABLED = False
             recording_start_time = None
 
@@ -432,8 +438,10 @@ while True:
     elif key in S.KEY_TOGGLE_FIRE:
         FIRE_ON = not FIRE_ON
 
+    elif key in S.KEY_TOGGLE_DRAW:
+        DRAW_DETECTIONS = not DRAW_DETECTIONS
+
     elif key in S.KEY_TOGGLE_INPUT and S.INPUT_MODE.lower() == "camera":
-        # Toggle webcam <-> capture_card by reopening VideoCapture
         prev = ACTIVE_CAMERA_SOURCE
         ACTIVE_CAMERA_SOURCE = "capture_card" if prev == "webcam" else "webcam"
 
@@ -443,14 +451,14 @@ while True:
             pass
 
         try:
-            cap, is_file_source, TARGET_FPS, video_start_wall, input_desc = _open_capture("camera", ACTIVE_CAMERA_SOURCE)
+            cap, is_file_source, TARGET_FPS, video_start_wall, input_desc = _open_capture(
+                "camera", ACTIVE_CAMERA_SOURCE
+            )
 
-            # Recreate RTSP streamer with the new FPS (optional, but keeps ffmpeg -r consistent)
             if rtsp is not None:
                 rtsp.close()
                 rtsp = RTSPStreamer(S.RTSP_URL, fps=TARGET_FPS)
 
-            # Reset timing windows to avoid bogus drop/fps spikes
             fps_hist.clear()
             drop_hist.clear()
             t_prev = time.time()
@@ -458,13 +466,13 @@ while True:
             window_start = time.time()
 
         except Exception as e:
-            # Roll back if the new source fails
             print("Toggle input failed:", e)
             ACTIVE_CAMERA_SOURCE = prev
-            cap, is_file_source, TARGET_FPS, video_start_wall, input_desc = _open_capture("camera", ACTIVE_CAMERA_SOURCE)
+            cap, is_file_source, TARGET_FPS, video_start_wall, input_desc = _open_capture(
+                "camera", ACTIVE_CAMERA_SOURCE
+            )
 
 
-# Cleanup
 try:
     cap.release()
 except Exception:
