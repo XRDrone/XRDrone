@@ -43,7 +43,7 @@ OUTPUT_CODEC = "mp4v"
 ENABLE_RTSP = False
 RTSP_URL = "rtsp://127.0.0.1:8554/stream"
 
-ENABLE_UDP = False
+ENABLE_UDP = True
 UDP_IP = "127.0.0.1"
 UDP_PORT = 5005
 
