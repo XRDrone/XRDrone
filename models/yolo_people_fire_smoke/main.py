@@ -127,7 +127,19 @@ def draw_masks(
 
         if mask_data is not None:
             m = mask_data[i]
-            m = (m > 0.5)
+            m = np.squeeze(m)
+            if m.ndim != 2:
+                continue
+
+            if m.shape[:2] != (h_img, w_img):
+                m = cv2.resize(
+                    m.astype(np.float32),
+                    (w_img, h_img),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+
+            m = m > 0.5
+
             frame[m] = (
                 frame[m].astype(np.float32) * (1.0 - alpha) + color_arr * alpha
             ).astype(np.uint8)
