@@ -3,7 +3,8 @@
 XRDrone local pipeline settings.
 
 This file centralizes all runtime configuration for the local YOLO
-inference demo (video source, model paths, thresholds, HUD, logging, and keys).
+inference demo (video source, model paths, thresholds, HUD, logging, keys,
+and network streaming).
 Edit values here; main.py should not contain hard-coded settings.
 """
 
@@ -14,11 +15,48 @@ import torch
 # Input / Output
 # -----------------------------
 VIDEO_PATH = r"E:\Detection_Segmentation_Demo.mp4"  # file path if using video file input
-VIDEO_SOURCE = 0  # set to VIDEO_PATH to run on a file, or keep as camera index (e.g., 0)
+VIDEO_SOURCE = 0  # legacy: set to VIDEO_PATH for file input, or keep as camera index (e.g., 0)
+
+# Input mode + camera source toggle
+# INPUT_MODE:
+#   - "camera": read from webcam/capture-card
+#   - "file":   read from VIDEO_PATH
+INPUT_MODE = "camera"  # "camera" | "file"
+
+# When INPUT_MODE="camera", choose which device is default at startup.
+# You can also toggle at runtime with KEY_TOGGLE_INPUT.
+CAMERA_SOURCE_DEFAULT = "webcam"  # "webcam" | "capture_card"
+WEBCAM_INDEX = 0
+CAPTURE_CARD_INDEX = 1
+
+# Backend hint for cv2.VideoCapture(index, backend_flag)
+# Common options: "auto", "dshow", "msmf", "v4l2", "avfoundation"
+CAPTURE_BACKEND = "auto"
 
 SAVE_OUTPUT = False  # if True, writes annotated output video (requires consent if enabled below)
 OUTPUT_VIDEO = "Segmentation_Aeroscapes.mp4"
 OUTPUT_CODEC = "mp4v"
+
+# -----------------------------
+# Network streaming
+# -----------------------------
+ENABLE_RTSP = False
+RTSP_URL = "rtsp://127.0.0.1:8554/stream"
+
+ENABLE_UDP = True
+UDP_IP = "127.0.0.1"
+UDP_PORT = 5005
+
+# If True, RTSP/UDP only run while RECORDING is enabled (mirrors consent gating).
+REQUIRE_CONSENT_FOR_NETWORK = False
+
+# Unity class-id mapping for UDP packets
+UNITY_CLASS_ID = {
+    "person": 0,
+    "fire": 1,
+    "smoke": 2,
+}
+UDP_SEND_CLASSES = ("person", "fire", "smoke")  # filter; set to None to send everything
 
 # -----------------------------
 # Logging
@@ -33,7 +71,7 @@ REQUIRE_CONSENT_FOR_LOG = True
 # Models
 # -----------------------------
 PEOPLE_MODEL_PATH = "../yolo11_models/yolo11n-seg.pt"              # instance segmentation model
-FIRE_MODEL_PATH = "../yolo11_models/fire_smoke_detection.pt"       # fire/smoke model (det/seg depending on weights)
+FIRE_MODEL_PATH = "../yolo11_models/fire_smoke_detection.pt"       # fire/smoke model
 
 # Confidence thresholds passed into Ultralytics predict()
 PEOPLE_CONF = 0.40
@@ -58,6 +96,10 @@ PEOPLE_ON_DEFAULT = True
 FIRE_ON_DEFAULT = False
 RECORDING_ENABLED_DEFAULT = False
 
+# NEW: Visual overlay toggle (drawing only)
+# If False, no masks/boxes/labels are drawn, but inference + merge + UDP still run.
+DRAW_DETECTIONS_DEFAULT = True
+
 # -----------------------------
 # Mask rendering
 # -----------------------------
@@ -65,7 +107,7 @@ MASK_ALPHA = 0.35
 MASK_TEXT_SCALE = 0.6
 MASK_TEXT_THICKNESS = 2
 
-# If True, attempts to attach mask arrays into the merged detection dicts (can bloat logs)
+# If True, attempts to attach mask arrays into the merged detection dicts (can bloat memory/log size)
 ATTACH_PEOPLE_MASKS_TO_LOG = True
 ATTACH_FIRE_MASKS_TO_LOG = True
 
@@ -93,3 +135,9 @@ KEY_ESC = 27
 KEY_TOGGLE_RECORDING = (ord("r"), ord("R"))
 KEY_TOGGLE_PEOPLE = (ord("k"), ord("K"))
 KEY_TOGGLE_FIRE = (ord("l"), ord("L"))
+
+# Toggle camera input (webcam <-> capture_card) while running (only when INPUT_MODE="camera")
+KEY_TOGGLE_INPUT = (ord("i"), ord("I"))
+
+# NEW: Toggle visual overlays (masks/boxes/labels). UDP unaffected.
+KEY_TOGGLE_DRAW = (ord("v"), ord("V"))
