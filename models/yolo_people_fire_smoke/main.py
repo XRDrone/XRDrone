@@ -312,6 +312,8 @@ while True:
         alpha=S.HUD_ALPHA,
         font_scale=S.HUD_FONT_SCALE,
         thickness=S.HUD_THICKNESS,
+
+        position=(1500, 275),
     )
 
     allow_output = (not S.REQUIRE_CONSENT_FOR_OUTPUT) or RECORDING_ENABLED

@@ -18,7 +18,14 @@ OpenCV image for real-time display or video encoding.
 import cv2
 
 def draw_hud(
-    frame, lines, anchor="tl", margin=10, alpha=0.45, font_scale=0.55, thickness=1
+    frame,
+    lines,
+    anchor="tl",
+    margin=10,
+    alpha=0.45,
+    font_scale=0.55,
+    thickness=1,
+    position=None, # NEW
 ):
     pad = 5
     line_h = 0
@@ -35,7 +42,10 @@ def draw_hud(
     box_h = line_h * len(lines) + pad * (len(lines) + 1)
 
     H, W = frame.shape[:2]
-    if anchor == "tl":
+    if position is not None:
+        x1, y1 = position
+        
+    elif anchor == "tl":
         x1, y1 = margin, margin
     elif anchor == "tr":
         x1, y1 = W - margin - box_w, margin
@@ -45,24 +55,103 @@ def draw_hud(
         x1, y1 = W - margin - box_w, H - margin - box_h
     else:
         x1, y1 = margin, margin
+        
+    # Clamp HUD inside frame bounds
+    x1 = max(0, min(x1, W - box_w))
+    y1 = max(0, min(y1, H - box_h))
+    
     x2, y2 = x1 + box_w, y1 + box_h
 
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), -1)
-    frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 0), -1)
 
     y = y1 + pad + line_h
+    
+    def draw_colored_segments(y, segments):
+        """
+        Draw multiple colored text segments on one HUD line.
+        segments = [(string, color), ...]
+        """
+        x = x1 + pad
+        for seg_text, seg_color in segments:
+            cv2.putText(
+                frame,
+                seg_text,
+                (x, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                seg_color,
+                thickness,
+                cv2.LINE_AA,
+            )
+            # Advance x by width of this segment
+            (tw, _), _ = cv2.getTextSize(
+                seg_text,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                thickness,
+            )
+            x += tw
+    
     for text in lines:
-        cv2.putText(
-            frame,
-            text,
-            (x1 + pad, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            (255, 255, 255),
-            thickness,
-            cv2.LINE_AA,
-        )
+
+        # Only label+colon colored, number white
+        if text.startswith("People:"):
+            draw_colored_segments(y, [
+                ("People: ", (255, 255, 0)),  # Cyan
+                (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
+            ])
+
+        elif text.startswith("Fire:"):
+            draw_colored_segments(y, [
+                ("Fire: ", (255, 0, 255)),  # Purple
+                (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
+            ])
+
+        elif text.startswith("Smoke:"):
+            draw_colored_segments(y, [
+                ("Smoke: ", (0, 255, 255)),  # Yellow
+                (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
+            ])
+            
+        # Only People cyan
+        elif text.startswith("People model:"):
+            # Color only "People" cyan, rest white
+            rest = text[len("People"):]
+
+            draw_colored_segments(y, [
+                ("People", (255, 255, 0)),        # Cyan
+                (rest, (255, 255, 255)),          # Everything else white
+            ])
+
+        # Only Fire purple, Smoke yellow, rest white
+        elif text.startswith("Fire/Smoke model:"):
+
+            # Split into prefix and ON/OFF part
+            prefix, state = text.split(":", 1)
+
+            draw_colored_segments(y, [
+                ("Fire", (255, 0, 255)),          # Purple
+                ("/", (255, 255, 255)),           # White slash
+                ("Smoke", (0, 255, 255)),         # Yellow
+                (" model:", (255, 255, 255)),     # Rest white
+                (" " + state.strip(), (255, 255, 255)),  # OFF (L) white
+            ])
+
+        # ----------------------------
+        # Default case: normal white text
+        # ----------------------------
+        else:
+            cv2.putText(
+                frame,
+                text,
+                (x1 + pad, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                (255, 255, 255),
+                thickness,
+                cv2.LINE_AA,
+            )
+
         y += line_h + pad
 
     return frame
