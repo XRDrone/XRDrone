@@ -113,17 +113,17 @@ ATTACH_FIRE_MASKS_TO_LOG = True
 
 # Overlay colors (BGR for OpenCV)
 COLORS = {
-    "person": (255, 0, 0),
-    "item": (255, 0, 0),
-    "fire": (255, 0, 255),
-    "smoke": (0, 255, 255),
+    "person": (255, 255, 0), # Cyan
+    "item": (255, 0, 0), # Blue
+    "fire": (255, 0, 255), # Purple
+    "smoke": (0, 255, 255), # Yellow
 }
 
 # -----------------------------
 # HUD
 # -----------------------------
-HUD_ANCHOR = "tl"
-HUD_MARGIN = 10
+HUD_ANCHOR = "lb"
+HUD_MARGIN = 40 # space above bottom
 HUD_ALPHA = 0.45
 HUD_FONT_SCALE = 0.55
 HUD_THICKNESS = 1

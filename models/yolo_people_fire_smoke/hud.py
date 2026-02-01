@@ -53,6 +53,10 @@ def draw_hud(
         x1, y1 = margin, H - margin - box_h
     elif anchor == "br":
         x1, y1 = W - margin - box_w, H - margin - box_h
+    elif anchor == "lb":
+        # Left-bottom placement with fixed spacing from bottom
+        x1 = 0
+        y1 = H - margin - box_h
     else:
         x1, y1 = margin, margin
         
