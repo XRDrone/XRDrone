@@ -1,11 +1,7 @@
 .env
-datasets/
 *.csv
 *.json
 *.mp4
 *.pt
 models/yolo_people_fire_smoke/__pycache__
-training/
-cesium/
-tools/
 *__pycache__
