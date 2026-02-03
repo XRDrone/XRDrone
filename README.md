@@ -88,23 +88,31 @@ XRDrone is not intended to provide autonomous navigation, global mapping, or per
 
 ---
 
-## 🖥️ Tech Stack 
+## 🧰 Tech Stack
 
-### 🛰️ Drone + Streaming
-- DJI Neo + RC 2  
-- FFmpeg (USB capture → WHIP)  
-- MediaMTX (WebRTC server)  
-- Unity WebRTC Plugin  
+### 🛸 Hardware
+- **Drone:** DJI Neo
+- **XR Headset:** Meta Quest 2 (standalone VR)
 
-### 🤖 AI Detection
-- Ultralytics YOLO11 (detection + segmentation)
+### 🥽 XR Application
+- **Engine:** Unity (C#) targeting Quest
+- **Features:** VR visualization of detections + HUD, plus voice/LLM-driven HUD controls
 
-### 🎮 Unity + VR
-- Unity  
-- Meta Quest 2   
+### 🧠 On-Device Computer Vision Pipeline
+- **Language:** Python 3
+- **CV Inference:** Ultralytics YOLO (detection + segmentation)
+- **ML Runtime:** PyTorch (CUDA when available)
+- **Video & Rendering:** OpenCV
+- **Numerics:** NumPy
 
-### 🛠️ DevOps 
-- GitHub + GitHub Actions  
+### 🌐 Streaming & Networking
+- **UDP Telemetry:** JSON packets (detections + metadata) published from Python to Unity
+- **Video Streaming:** RTSP pipeline via FFmpeg (x264 / low-latency settings)
+- **Transport/IO:** Python `socket` (UDP) + `subprocess` (FFmpeg)
+
+### 🔒 Responsible/Safe Operation
+- **Privacy-by-default:** No PII stored unless recording is explicitly enabled
+- **Voice Action Bounding:** Whitelisted actions/parameters; reject out-of-scope commands
 
 ---
 
