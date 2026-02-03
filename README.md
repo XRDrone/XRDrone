@@ -9,49 +9,53 @@
 
 ## 🛰️ Project Overview
 
-XRDrone is a real-time drone-to-VR system for fire-rescue scenarios that streams live video from a DJI Neo into a Meta Quest headset, performs on-device detection of **fire, smoke, and humans**, and renders results as **stable, legible spatial overlays** inside a VR scene. These overlays use **depth-like and altitude-like cues** rather than true geo-referenced or world-relative positioning, consistent with the telemetry available from the DJI Neo.
+Emergency response and disaster assessment often require situational awareness in environments that are dangerous, time-sensitive, or inaccessible to first responders. Small aerial drones can rapidly collect visual information, but operators are typically limited to 2D video feeds on handheld displays, which can increase cognitive load and reduce spatial understanding in high-stress scenarios.
 
-The system provides a cockpit-style HUD showing **FPS, model latency, detection counts (people/fire/smoke), and dropped frames**, updating at least once per second without obstructing the operator’s view.
+**XRDrone** addresses this problem by integrating a lightweight aerial drone with a standalone XR headset to provide an immersive, real-time visualization of drone sensor data. The system streams live video from the drone to the headset, performs on-device computer vision inference to detect hazards such as fire, smoke, and people, and renders these detections as stable spatial overlays within a virtual reality environment. This allows users to perceive detections in context, improving situational awareness without relying on cloud services or external infrastructure.
 
-In addition to live operation, XRDrone supports **post-flight telemetry review** by parsing DJI RC 2 flight logs and generating a **3D Cesium visualization** of the drone’s flight path and key telemetry values for after-action analysis.
+The project scope is intentionally constrained to support **on-device, privacy-preserving operation** suitable for emergency contexts. XRDrone performs inference locally, avoids storing personally identifiable information by default, and prioritizes low latency, stable frame rates, and sustained operation on standalone XR hardware. Advanced capabilities such as natural-language voice commands are included to enable hands-free interaction, but are strictly bounded to a whitelisted set of safe actions to prevent unintended behavior.
 
-### Core Objectives
+XRDrone is not intended to provide autonomous navigation, global mapping, or persistent world anchoring. Instead, it focuses on delivering a credible end-to-end prototype that demonstrates real-time drone-to-XR streaming, on-device hazard detection, and immersive visualization under realistic performance and ethical constraints.
 
-- **Video → Quest (Performance & Latency):**  
-  Stream **≥720p** at **≥24 FPS** with **≤2% dropped frames** over a 3-minute test, achieve **≤300 ms median glass-to-glass latency**, and render on a **curved surface** to minimize distortion inside VR.
-- **On-Device Vision (Classes & Quality):**  
-  Run **on-headset inference** at **≥15 FPS** for **fire, smoke, and humans** and achieve **F1 ≥ 0.5** on **≥150** evaluation frames relevant to forest-fire scenarios.
-- **Spatial Overlays & HUD (UX):**  
-  Render **stable, legible spatial overlays** using **depth-like and altitude-like cues** (no world-relative or geo-referenced positioning).  
-  HUD displays **FPS, model latency, detection counts (people/fire/smoke), and dropped frames**, all updating at least once per second and remaining unobtrusive.
-- **Reliability & Safety:**  
-  **Recover from forced disconnects** without requiring an app restart and **operate ≥5 minutes** continuously with no crashes and no severe FPS degradation.
-- **Privacy & Ethics:**  
-  **Store no PII by default**; any recording requires **explicit opt-in** with a confirmation dialog and consent timestamping, respecting dataset licensing and privacy constraints.
-- **Post-Flight Telemetry Review:**  
-  Parse **DJI RC 2 log files** and generate a **3D Cesium-based post-flight visualization** of the drone’s trajectory and key telemetry for after-action review.
-- **Engineering Deliverables:**  
-  Provide clear **architecture documentation**, **measurement methods** (FPS/latency/inference), runtime **profiling & logs**, and a **one-command reproducible build**.
+### 🎯 Core Objectives
 
+- **Live Video Streaming:** Stream DJI Neo video to the headset at **≥720p**.
+- **Real-Time VR Performance:** Maintain **≥24 FPS** with **≤2% dropped frames** over **3 minutes**, and achieve **≤300 ms median glass-to-glass latency**.
+- **On-Device Hazard Detection:** Run **fire/smoke/human** detection on-device at **≥15 FPS** and achieve **F1 ≥ 0.5** on **≥150** evaluation frames.
+- **Spatial Visualization (No Geo-Anchoring):** Render detections as **stable spatial VR overlays** with **depth/altitude-like cues**, without **world-relative or geo-referenced** positioning.
+- **Operator HUD Telemetry:** Display **FPS, model latency, detection count, and dropped frames** continuously during live operation.
+- **Confidence Communication:** **Visually distinguish low-confidence detections** (e.g., alternate styling below a confidence threshold).
+- **Stability:** Operate continuously for **≥5 minutes** with **no crashes/freezes** and FPS **never dropping below 20 FPS**.
+- **Privacy-by-Default:** **Do not store PII by default**; recording is **only allowed when explicitly enabled** by the user.
+- **Speech + LLM HUD Control:** Provide **LLM-backed natural-language voice commands** for HUD control with:
+  - **Safe, whitelisted actions/parameters** (reject and log out-of-scope commands)
+  - **≤2.5 s median voice-to-action latency** (20 commands) and **graceful failure** with on-screen errors (no interruption to video/overlays)
 
 ---
 
-## 📊 Acceptance Criteria — Consolidated Requirements
+## 📊 Requirements 
 
-| ID | Requirement | Priority | Acceptance Evidence |
-|----|------------|----------|---------------------|
-| **REQ-001** | Stream live DJI Neo video to the headset at **≥ 720p** | Must | Verified via headset capture resolution metadata |
-| **REQ-002 (NFR-Performance)** | Maintain **≥ 24 FPS** with **≤ 2% dropped frames** over **3 min** | Must | Log average FPS & drop rate via profiler |
-| **REQ-003 (NFR-Performance)** | Achieve **≤ 300 ms median** glass-to-glass latency | Must | Measured via timestamp overlay + external camera |
-| **REQ-004 (NFR-Performance)** | Run fire/smoke/human detection **on-device** at **≥ 15 FPS** | Must | On-device profiling shows sustained ≥ 15 inference FPS |
-| **REQ-005 (NFR-Quality)** | Achieve **F1 ≥ 0.5** on **≥ 150** evaluation frames | Must | Standard precision/recall evaluation report |
-| **REQ-006 (NFR-Privacy/Ethics)** | Store **no PII by default**; recording must be **explicitly user-enabled** | Must | Recording off by default; enabling requires UI toggle + confirmation dialog + consent timestamp; no PII written unless consented |
-| **REQ-007** | Render detected objects as **stable spatial overlays** using **depth/altitude cues**, without world-relative or geo-referenced positioning | Must | Live VR demo shows overlays are stable, legible, depth-cued; ≥3 object types; evaluated qualitatively (no ground-truth required) |
-| **REQ-008** | HUD displays **FPS, model latency, detection counts (people/fire/smoke), and dropped frames** | Should | Each value updates ≥1/s, remains visible, and does not obstruct the video feed |
-| **REQ-009** | Visually differentiate **low-confidence detections** | Should | Detections below threshold use alternate styling (e.g., dashed/faded); at least two confidence levels shown |
-| **REQ-010 (NFR-Reliability/Stability)** | Operate **≥ 5 minutes** continuously with no crashes or major FPS degradation | Should | System runs ≥5 minutes with FPS never <20; logs show stable CPU/GPU and no fatal errors |
-| **REQ-011** | Support **post-flight telemetry review** using DJI RC 2 log files | Should | Parse `.txt` logs, upload telemetry to Cesium, and generate a 3D post-flight visualization of trajectory and key metrics |
+| Priority | ID | Type | Requirement | Acceptance Criteria (High Priority Only) | Dependencies | PR/Issue Link | Status |
+|---|---|---|---|---|---|---|---|
+| P0 | REQ-001 | Functional | Livestream DJI Neo video to the headset at ≥720p. | Verified via headset capture resolution metadata. | This is a foundational requirement because the rest of the system needs a working live video stream before performance, overlays, detection, or voice features can be implemented or validated. | https://github.com/XRDrone/XRDrone/issues/140 | Done |
+| P0 | REQ-002 | Non-functional | Maintain ≥24 FPS video with ≤2% dropped frames over 3 min. | Log average FPS & drop rate via profiler. | This depends on REQ-001 because FPS and dropped frames are only meaningful to measure once video is successfully streaming to the headset. | https://github.com/XRDrone/XRDrone/issues/141 | Done |
+| P0 | REQ-003 | Non-functional | Achieve ≤300 ms median glass-to-glass latency. | Measured via timestamp overlay + external camera. | This depends on REQ-001 because glass-to-glass latency cannot be measured unless a live end-to-end video pipeline exists. | https://github.com/XRDrone/XRDrone/issues/142 | In progress |
+| P0 | REQ-004 | Functional | Run fire/smoke/human detection on-device at ≥15 FPS | Profiling on Quest showing ≥15 inference FPS sustained | This depends on REQ-001 because on-device detection requires a steady stream of video frames to run inference and profile inference speed. | https://github.com/XRDrone/XRDrone/issues/143 | In Progress |
+| P1 | REQ-005 | Non-functional | Achieve F1 ≥ 0.5 on ≥150 evaluation frames. | Standard precision/recall evaluation report. | This depends on REQ-004 because you cannot compute F1 score unless the detection model is producing predictions that can be compared against ground truth. | https://github.com/XRDrone/XRDrone/issues/144 | In progress |
+| P0 | REQ-006 | Non-Functional | Do not store PII by default; recording only if explicitly enabled by the user. | During runtime testing, no user-identifiable data (name, face, voice ID, location coordinates tied to an identity. | No dependencies | https://github.com/XRDrone/XRDrone/issues/147 | Not Started |
+| P0 | REQ-007 | Functional | Render detections as stable spatial VR overlays with depth cues; no world/geo anchoring. | During a live VR demo, detected objects must appear as stable and clearly visible spatial overlays within the VR scene | This depends on REQ-004 because spatial overlays are generated from detection outputs, so there is nothing to render if detections are not being produced. | https://github.com/XRDrone/XRDrone/issues/149 | In progress |
+| P1 | REQ-008 | Functional | Show FPS, model latency, detection count, and dropped frames. | HUD elements must continuously display real-time FPS, model latency (ms), the number of objects detected. | This depends on REQ-001 and REQ-004 because HUD metrics require access to the live video pipeline for FPS and drops, and access to the detection pipeline for model latency and detection counts. | https://github.com/XRDrone/XRDrone/issues/150 | In progress |
+| P2 | REQ-009 | Functional | Visually distinguish low-confidence detections. | Detections with confidence < threshold (default 0.5 unless user-adjusted) must be visually styled differently—e.g., dashed bounding box or faded color. | This depends on REQ-004 and REQ-007 because confidence values come from the detector and visual differentiation requires an overlay rendering system where styling can be changed. | https://github.com/XRDrone/XRDrone/issues/152 | In progress |
+| P0 | REQ-010 | Non-functional | Run continuously for ≥5 minutes without crashes or significant FPS drop. | System must run for ≥5 minutes continuously with FPS never dropping below 20 FPS and no crashes or freezes. fatal errors. | This depends on REQ-001 because continuous stability cannot be demonstrated without continuous streaming, and it is best validated alongside REQ-008 since logs are needed to prove there was no major FPS degradation. | https://github.com/XRDrone/XRDrone/issues/151 | Not started |
+| P1 | REQ-011 | Functional | Support LLM-backed natural-language voice commands in Unity with real-time actions. | PASS if, during Play Mode, the user speaks at least 5 distinct commands, the system transcribes them, produces the correct structured action, and applies it in the same session. | This depends on the existence of controllable runtime features like HUD and overlay toggles because voice commands only matter if they can trigger structured actions that change the Unity scene in real time. | https://github.com/XRDrone/XRDrone/issues/148 | In-progress |
+| P0 | REQ-012 | Non-functional | Restrict voice/LLM control to a whitelisted action/parameter set; reject others. | PASS if the system rejects (and logs) 10/10 malformed/out-of-scope voice commands (unknown action, invalid parameter types/ranges, unknown target IDs) and the app continues running normally. | This depends on REQ-011 because safety and bounding can only be evaluated once the system is already capable of producing actions from voice and LLM output. | https://github.com/XRDrone/XRDrone/issues/146 | To-do |
+| P2 | REQ-013 | Non-functional | ≤2.5 s median voice-to-action latency (20 commands); fail gracefully with on-screen errors. | PASS if median end-to-end latency is <=2.5 s across 20 voice commands, and any STT/LLM outage results in a user-visible error with no crash and no interruption to video streaming/overlays. | This depends on REQ-011 because end-to-end voice command latency can only be measured after the voice pipeline is implemented and able to apply actions, and it also relies on uninterrupted streaming behavior which assumes REQ-001 is stable. | https://github.com/XRDrone/XRDrone/issues/145 | To-do |
 
+### 🏷️ Priority Labels
+
+- **P0 (Must-have / Critical path)**: Required for a credible end-to-end demo; blocking if missing.
+- **P1 (Should-have)**: Strongly expected; improves usability, safety, or quality, but the demo can still run.
+- **P2 (Nice-to-have)**: Valuable polish or robustness; not essential for the baseline demo.
 
 ---
 
@@ -94,24 +98,13 @@ In addition to live operation, XRDrone supports **post-flight telemetry review**
 
 ### 🤖 AI Detection
 - Ultralytics YOLO11 (detection + segmentation)
-- Custom YOLO datasets (people, fire, smoke)
-- WiSARD Dataset — Visual + Thermal SAR imagery (see citation below)
-- AeroScapes Dataset — Outdoor human segmentation dataset (see citations below)
-
-### 🗺️ Telemetry + Mapping
-- dji-log-parser — Rust-based DJI flight log decoder (Luc Vauvillier)
-- Python telemetry converter  
-- Cesium for Unity  
 
 ### 🎮 Unity + VR
 - Unity  
 - Meta Quest 2   
 
-### 🛠️ DevOps + Training
+### 🛠️ DevOps 
 - GitHub + GitHub Actions  
-- TensorBoard  
-- RTX GPU laptops (training)  
-- Custom YOLO dataset YAML configs  
 
 ---
 
@@ -124,39 +117,6 @@ In addition to live operation, XRDrone supports **post-flight telemetry review**
   booktitle = {{IEEE/RSJ Int.\ Conf.\ on Intelligent Robots \& Systems}},
   title = {{WiSARD}: A Labeled Visual and Thermal Image Dataset for Wilderness Search and Rescue},
   year = {2022},
-}
-```
-
-### **WiSARD Dataset**
-```
-@inproceedings{BroylesHaynerEtAl2022,  
-  author = {Broyles, D.* and Hayner, C.* and Leung, K.},  
-  booktitle = {{IEEE/RSJ Int.\ Conf.\ on Intelligent Robots \& Systems}},  
-  title = {{WiSARD}: A Labeled Visual and Thermal Image Dataset for Wilderness Search and Rescue},  
-  year = {2022},  
-}
-```
-
-### **AeroScapes Dataset (Primary Paper)**
-```
-Ensemble Knowledge Transfer for Semantic Segmentation
-Ishan Nigam, Chen Huang, Deva Ramanan
-Proceedings of the 2018 IEEE Winter Conference on Applications of Computer Vision
-```
-
-### **AeroScapes Visualization Tools (Dataset Ninja)**
-```
-@misc{ visualization-tools-for-aeroscapes-dataset,
-  title = { Visualization Tools for AeroScapes Dataset },
-  type = { Computer Vision Tools },
-  author = { Dataset Ninja },
-  howpublished = { \url{ https://datasetninja.com/aeroscapes } },
-  url = { https://datasetninja.com/aeroscapes },
-  journal = { Dataset Ninja },
-  publisher = { Dataset Ninja },
-  year = { 2025 },
-  month = { nov },
-  note = { visited on 2025-11-30 },
 }
 ```
 
@@ -202,4 +162,3 @@ Special thanks to **Prof. Raffaele De Amicis** for project sponsorship and guida
 and to Oregon State University’s School of EECS for supporting the XRDrone Capstone.
 
 ---
-
