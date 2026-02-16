@@ -212,6 +212,13 @@ All contributions must include relevant documentation updates to keep the projec
 - reviewers verify that doc updates match the implemented behavior and that CHANGELOG entries follow version format:  
   `## [X.Y.Z] – YYYY-MM-DD`
 
+**Definition of Done**
+- Builds without errors
+- Meets requirement IDs
+- Tests pass
+- Documentation updated
+- Approved PR
+
 ## Release Process
 
 Describe versioning scheme, tagging, changelog generation, packaging/publishing steps, and rollback process.
