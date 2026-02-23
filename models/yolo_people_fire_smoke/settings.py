@@ -127,7 +127,6 @@ PEOPLE_ON_DEFAULT = True
 FIRE_ON_DEFAULT = False
 RECORDING_ENABLED_DEFAULT = False
 
-# NEW: Visual overlay toggle (drawing only)
 # If False, no masks/boxes/labels are drawn, but inference + merge + UDP still run.
 DRAW_DETECTIONS_DEFAULT = True
 
@@ -164,6 +163,14 @@ HUD_FONT_SCALE = 0.55
 HUD_THICKNESS = 1
 
 # -----------------------------
+# DJI menu overlay (PNG on top of video)
+# -----------------------------
+# Loads this PNG (expects RGBA with alpha) and composites it over each frame.
+# It is resized every frame to match the current frame dimensions.
+DJI_MENU_OVERLAY_PATH = "DJImenu.png"
+DJI_MENU_OVERLAY_ENABLED_DEFAULT = True
+
+# -----------------------------
 # Keybinds
 # -----------------------------
 KEY_ESC = 27
@@ -177,12 +184,14 @@ KEY_TOGGLE_HUD = (ord("h"), ord("H"))
 # Toggle camera input (webcam <-> capture_card) while running (only when INPUT_MODE="camera")
 KEY_TOGGLE_INPUT = (ord("i"), ord("I"))
 
-# NEW: Toggle visual overlays (masks/boxes/labels). UDP unaffected.
+# Toggle visual overlays (masks/boxes/labels). UDP unaffected.
 KEY_TOGGLE_DRAW = (ord("v"), ord("V"))
+
+# Toggle DJI overlay PNG.
+KEY_TOGGLE_DJI_OVERLAY = (ord("u"), ord("U"))
 
 # -----------------------------
 # Test mode
 # -----------------------------
-
 # Used when running: python main.py -test
 TEST_IMAGE_PATH = "test.jpg"

@@ -10,12 +10,16 @@ This module:
     counts per class, and toggle states.
   - draw_boxes(): draws YOLO bounding boxes plus class labels and
     confidence percentages using a per-class color map and model.names.
+  - load_rgba_overlay(): loads a PNG (RGBA) once.
+  - apply_rgba_overlay_fullframe(): resizes overlay to frame size and alpha-blends it on top.
 
 All operations modify the provided frame in place and return the updated
 OpenCV image for real-time display or video encoding.
 """
 
 import cv2
+import numpy as np
+
 
 def draw_hud(
     frame,
@@ -25,7 +29,7 @@ def draw_hud(
     alpha=0.45,
     font_scale=0.55,
     thickness=1,
-    position=None, # NEW
+    position=None,  # NEW
 ):
     pad = 5
     line_h = 0
@@ -44,7 +48,7 @@ def draw_hud(
     H, W = frame.shape[:2]
     if position is not None:
         x1, y1 = position
-        
+
     elif anchor == "tl":
         x1, y1 = margin, margin
     elif anchor == "tr":
@@ -59,17 +63,17 @@ def draw_hud(
         y1 = H - margin - box_h
     else:
         x1, y1 = margin, margin
-        
+
     # Clamp HUD inside frame bounds
     x1 = max(0, min(x1, W - box_w))
     y1 = max(0, min(y1, H - box_h))
-    
+
     x2, y2 = x1 + box_w, y1 + box_h
 
     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 0), -1)
 
     y = y1 + pad + line_h
-    
+
     def draw_colored_segments(y, segments):
         """
         Draw multiple colored text segments on one HUD line.
@@ -95,55 +99,64 @@ def draw_hud(
                 thickness,
             )
             x += tw
-    
-    for text in lines:
 
+    for text in lines:
         # Only label+colon colored, number white
         if text.startswith("People:"):
-            draw_colored_segments(y, [
-                ("People: ", (255, 255, 0)),  # Cyan
-                (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
-            ])
+            draw_colored_segments(
+                y,
+                [
+                    ("People: ", (255, 255, 0)),  # Cyan
+                    (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
+                ],
+            )
 
         elif text.startswith("Fire:"):
-            draw_colored_segments(y, [
-                ("Fire: ", (255, 0, 255)),  # Purple
-                (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
-            ])
+            draw_colored_segments(
+                y,
+                [
+                    ("Fire: ", (255, 0, 255)),  # Purple
+                    (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
+                ],
+            )
 
         elif text.startswith("Smoke:"):
-            draw_colored_segments(y, [
-                ("Smoke: ", (0, 255, 255)),  # Yellow
-                (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
-            ])
-            
+            draw_colored_segments(
+                y,
+                [
+                    ("Smoke: ", (0, 255, 255)),  # Yellow
+                    (text.split(":")[1].strip(), (255, 255, 255)),  # Count white
+                ],
+            )
+
         # Only People cyan
         elif text.startswith("People model:"):
             # Color only "People" cyan, rest white
             rest = text[len("People"):]
-
-            draw_colored_segments(y, [
-                ("People", (255, 255, 0)),        # Cyan
-                (rest, (255, 255, 255)),          # Everything else white
-            ])
+            draw_colored_segments(
+                y,
+                [
+                    ("People", (255, 255, 0)),  # Cyan
+                    (rest, (255, 255, 255)),  # Everything else white
+                ],
+            )
 
         # Only Fire purple, Smoke yellow, rest white
         elif text.startswith("Fire/Smoke model:"):
-
             # Split into prefix and ON/OFF part
             prefix, state = text.split(":", 1)
+            draw_colored_segments(
+                y,
+                [
+                    ("Fire", (255, 0, 255)),  # Purple
+                    ("/", (255, 255, 255)),  # White slash
+                    ("Smoke", (0, 255, 255)),  # Yellow
+                    (" model:", (255, 255, 255)),  # Rest white
+                    (" " + state.strip(), (255, 255, 255)),  # OFF (L) white
+                ],
+            )
 
-            draw_colored_segments(y, [
-                ("Fire", (255, 0, 255)),          # Purple
-                ("/", (255, 255, 255)),           # White slash
-                ("Smoke", (0, 255, 255)),         # Yellow
-                (" model:", (255, 255, 255)),     # Rest white
-                (" " + state.strip(), (255, 255, 255)),  # OFF (L) white
-            ])
-
-        # ----------------------------
         # Default case: normal white text
-        # ----------------------------
         else:
             cv2.putText(
                 frame,
@@ -193,3 +206,54 @@ def draw_boxes(frame, results, colors, model):
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
     return frame
+
+
+def load_rgba_overlay(path: str):
+    """
+    Loads an image from disk as BGRA (OpenCV order) if possible.
+    Returns None if load fails.
+    """
+    if not path:
+        return None
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        return None
+
+    # Ensure BGRA (4 channels). If RGB/BGR only, add fully-opaque alpha.
+    if img.ndim == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGRA)
+    elif img.shape[2] == 3:
+        bgr = img
+        alpha = np.full((bgr.shape[0], bgr.shape[1], 1), 255, dtype=bgr.dtype)
+        img = np.concatenate([bgr, alpha], axis=2)
+    elif img.shape[2] != 4:
+        return None
+
+    return img
+
+
+def apply_rgba_overlay_fullframe(frame_bgr, overlay_bgra):
+    """
+    Alpha-blend overlay (BGRA) on top of frame (BGR).
+    Overlay is resized to exactly match the frame dimensions.
+    """
+    if frame_bgr is None or overlay_bgra is None:
+        return frame_bgr
+
+    h, w = frame_bgr.shape[:2]
+    if h <= 0 or w <= 0:
+        return frame_bgr
+
+    # Resize overlay to match frame
+    ov = cv2.resize(overlay_bgra, (w, h), interpolation=cv2.INTER_LINEAR)
+
+    # Split channels
+    ov_bgr = ov[:, :, :3].astype(np.float32)
+    alpha = ov[:, :, 3].astype(np.float32) / 255.0  # (h,w) in [0,1]
+    alpha = alpha[:, :, None]  # (h,w,1)
+
+    base = frame_bgr.astype(np.float32)
+    out = base * (1.0 - alpha) + ov_bgr * alpha
+
+    frame_bgr[:] = out.astype(np.uint8)
+    return frame_bgr

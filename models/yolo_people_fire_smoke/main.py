@@ -1,3 +1,4 @@
+# main.py
 from __future__ import annotations
 
 import argparse
@@ -14,7 +15,7 @@ from ultralytics import YOLO
 
 import settings as S
 from detection_logger import save_detections_json
-from hud import draw_hud
+from hud import draw_hud, load_rgba_overlay, apply_rgba_overlay_fullframe
 from merger import count_by_class, merge_detections
 from output_formatter import to_unity_udp_packet
 from streaming import RTSPStreamer, UDPPublisher
@@ -410,7 +411,13 @@ def run_test(args) -> int:
         finally:
             udp.close()
 
+    # Optional GUI display
     if not args.no_gui:
+        # Apply DJI overlay in test view only (purely visual).
+        dji_overlay = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
+        if S.DJI_MENU_OVERLAY_ENABLED_DEFAULT and dji_overlay is not None:
+            frame = apply_rgba_overlay_fullframe(frame, dji_overlay)
+
         cv2.imshow(S.WINDOW_NAME, frame)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
@@ -433,6 +440,10 @@ def run_live(args) -> int:
     # Visual toggles
     draw_detections = bool(S.DRAW_DETECTIONS_DEFAULT)
     hud_enabled = bool(S.HUD_ENABLED_DEFAULT)
+
+    # DJI overlay toggle (purely visual)
+    dji_overlay_on = bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT)
+    dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
 
     # Track which camera we are using at runtime (only relevant when INPUT_MODE="camera")
     active_camera_source = S.CAMERA_SOURCE_DEFAULT  # "webcam" | "capture_card"
@@ -592,6 +603,7 @@ def run_live(args) -> int:
                     f"Input: {input_desc}",
                     f"HUD: {'ON' if hud_enabled else 'OFF'} (H)",
                     f"Det overlays: {'ON' if draw_detections else 'OFF'} (V)",
+                    f"DJI overlay: {'ON' if (dji_overlay_on and dji_overlay_bgra is not None) else 'OFF'} (U)",
                     f"RTSP: {'ON' if (rtsp and net_on) else 'OFF'}",
                     f"UDP:  {'ON' if (udp and net_on) else 'OFF'}",
                     f"RECORDING: {'ON' if recording_enabled else 'OFF'} (R)",
@@ -608,6 +620,10 @@ def run_live(args) -> int:
                     font_scale=S.HUD_FONT_SCALE,
                     thickness=S.HUD_THICKNESS,
                 )
+
+            # DJI menu overlay (PNG on top of everything; purely visual)
+            if dji_overlay_on and dji_overlay_bgra is not None:
+                frame = apply_rgba_overlay_fullframe(frame, dji_overlay_bgra)
 
             # Output video
             allow_output = (not S.REQUIRE_CONSENT_FOR_OUTPUT) or recording_enabled
@@ -673,6 +689,9 @@ def run_live(args) -> int:
 
             elif key in S.KEY_TOGGLE_HUD:
                 hud_enabled = not hud_enabled
+
+            elif key in S.KEY_TOGGLE_DJI_OVERLAY:
+                dji_overlay_on = not dji_overlay_on
 
             elif key in S.KEY_TOGGLE_INPUT and S.INPUT_MODE.lower() == "camera":
                 prev = active_camera_source
