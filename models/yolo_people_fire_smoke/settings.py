@@ -37,6 +37,16 @@ SAVE_OUTPUT = False  # if True, writes annotated output video (requires consent 
 OUTPUT_VIDEO = "Segmentation_Aeroscapes.mp4"
 OUTPUT_CODEC = "mp4v"
 
+# Force the displayed/encoded/streamed frame size to 1080p (1920x1080).
+# This does NOT require the camera itself to run at 1080p; frames are resized/letterboxed.
+FORCE_OUTPUT_1080P = True
+OUTPUT_WIDTH = 1920
+OUTPUT_HEIGHT = 1080
+OUTPUT_KEEP_ASPECT = True  # letterbox to preserve aspect ratio
+
+# Best-effort: ask the camera for 1080p (many webcams/capture cards will honor this).
+REQUEST_CAMERA_1080P = True
+
 # -----------------------------
 # Network streaming
 # -----------------------------
@@ -55,8 +65,25 @@ UNITY_CLASS_ID = {
     "person": 0,
     "fire": 1,
     "smoke": 2,
+    "chair": 3,
+    "couch": 4,
+    "sofa": 4,  # alias
+    "dining table": 5,
 }
-UDP_SEND_CLASSES = ("person", "fire", "smoke")  # filter; set to None to send everything
+
+# Only send detections with >= this confidence in the UDP JSON payload.
+UDP_MIN_CONF = 0.80
+
+# Which classes are allowed into the UDP JSON payload.
+# (Set to None to send everything that passes UDP_MIN_CONF.)
+UDP_SEND_CLASSES = (
+    "person",
+    "fire",
+    "smoke",
+    "chair",
+    "couch",
+    "dining table",
+)
 
 # -----------------------------
 # Logging
@@ -72,6 +99,10 @@ REQUIRE_CONSENT_FOR_LOG = True
 # -----------------------------
 PEOPLE_MODEL_PATH = "../yolo11_models/yolo11n-seg.pt"              # instance segmentation model
 FIRE_MODEL_PATH = "../yolo11_models/fire_smoke_detection.pt"       # fire/smoke model
+
+# Classes to detect from the COCO-style model (YOLO11 COCO pretrained):
+# COCO includes "chair", "couch", and "dining table". ("sofa" is a common synonym for "couch".)
+DETECT_CLASSES = ("person", "chair", "couch", "dining table")
 
 # Confidence thresholds passed into Ultralytics predict()
 PEOPLE_CONF = 0.40
@@ -117,11 +148,15 @@ COLORS = {
     "item": (255, 0, 0), # Blue
     "fire": (255, 0, 255), # Purple
     "smoke": (0, 255, 255), # Yellow
+    "chair": (0, 200, 0), # Green
+    "couch": (200, 0, 0), # Blue-ish
+    "dining table": (0, 165, 255), # Orange-ish
 }
 
 # -----------------------------
 # HUD
 # -----------------------------
+HUD_ENABLED_DEFAULT = True
 HUD_ANCHOR = "lb"
 HUD_MARGIN = 40 # space above bottom
 HUD_ALPHA = 0.45
@@ -136,8 +171,18 @@ KEY_TOGGLE_RECORDING = (ord("r"), ord("R"))
 KEY_TOGGLE_PEOPLE = (ord("k"), ord("K"))
 KEY_TOGGLE_FIRE = (ord("l"), ord("L"))
 
+# Toggle HUD on/off.
+KEY_TOGGLE_HUD = (ord("h"), ord("H"))
+
 # Toggle camera input (webcam <-> capture_card) while running (only when INPUT_MODE="camera")
 KEY_TOGGLE_INPUT = (ord("i"), ord("I"))
 
 # NEW: Toggle visual overlays (masks/boxes/labels). UDP unaffected.
 KEY_TOGGLE_DRAW = (ord("v"), ord("V"))
+
+# -----------------------------
+# Test mode
+# -----------------------------
+
+# Used when running: python main.py -test
+TEST_IMAGE_PATH = "test.jpg"

@@ -41,6 +41,7 @@ def to_unity_udp_packet(
     height: int,
     class_map: Optional[Mapping[str, int]] = None,
     allowed_classes: Optional[Sequence[str]] = None,
+    min_conf: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Convert merger.merge_detections output into the UDP schema used by test_udp.py:
@@ -56,11 +57,16 @@ def to_unity_udp_packet(
     """
     class_map = class_map or {}
     allow = set(c.lower() for c in allowed_classes) if allowed_classes else None
+    min_conf_f = float(min_conf) if min_conf is not None else None
 
     dets: List[Dict[str, Any]] = []
     for i, det in enumerate(merged_detections):
         cls_name = str(det.get("class") or det.get("class_name") or "").lower()
         if allow is not None and cls_name not in allow:
+            continue
+
+        conf = float(det.get("confidence", 0.0))
+        if min_conf_f is not None and conf < min_conf_f:
             continue
 
         bbox = det.get("bbox_xyxy")
@@ -74,7 +80,7 @@ def to_unity_udp_packet(
             {
                 "id": int(i),
                 "cls": int(class_map.get(cls_name, -1)),
-                "conf": float(det.get("confidence", 0.0)),
+                "conf": float(conf),
                 "cx": float(cx),
                 "cy": float(cy),
                 "w": float(w),

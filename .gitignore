@@ -5,3 +5,5 @@
 *.pt
 models/yolo_people_fire_smoke/__pycache__
 *__pycache__
+*.avif
+*.png
