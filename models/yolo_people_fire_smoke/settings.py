@@ -214,4 +214,4 @@ KEY_TOGGLE_TRACKING = (ord("t"), ord("T"))
 # -----------------------------
 # Test mode
 # -----------------------------
-TEST_IMAGE_PATH = "test.jpg"
+TEST_IMAGE_PATH = "/Users/troy/Desktop/XRDrone/models/yolo_people_fire_smoke/people_furniture.avif"

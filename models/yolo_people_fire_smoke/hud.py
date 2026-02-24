@@ -1,4 +1,3 @@
-# hud.py
 """
 hud.py
 
@@ -10,6 +9,7 @@ This module:
     counts per class, and toggle states.
   - draw_boxes(): draws YOLO bounding boxes plus class labels and
     confidence percentages using a per-class color map and model.names.
+  - draw_dji_hud(): draws the "DJI-style" HUD layout used by main.py.
   - load_rgba_overlay(): loads a PNG (RGBA) once.
   - apply_rgba_overlay_fullframe(): resizes overlay to frame size and alpha-blends it on top.
 
@@ -19,6 +19,178 @@ OpenCV image for real-time display or video encoding.
 
 import cv2
 import numpy as np
+
+
+def _draw_text_outline(
+    frame,
+    text: str,
+    org,
+    font_scale: float,
+    *,
+    color=(255, 255, 255),
+    outline_color=(0, 0, 0),
+    outline_px: int = 2,
+    thickness: int = 2,
+    font=cv2.FONT_HERSHEY_SIMPLEX,
+):
+    """
+    Draw text with a simple outline by rendering the text multiple times
+    with small offsets (outline), then the main text on top.
+    """
+    x, y = int(org[0]), int(org[1])
+    opx = int(max(0, outline_px))
+
+    if opx > 0:
+        for dx in range(-opx, opx + 1):
+            for dy in range(-opx, opx + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                cv2.putText(
+                    frame,
+                    text,
+                    (x + dx, y + dy),
+                    font,
+                    float(font_scale),
+                    outline_color,
+                    int(thickness),
+                    cv2.LINE_AA,
+                )
+
+    cv2.putText(
+        frame,
+        text,
+        (x, y),
+        font,
+        float(font_scale),
+        color,
+        int(thickness),
+        cv2.LINE_AA,
+    )
+
+
+def draw_dji_hud(
+    frame,
+    *,
+    people: int = 0,
+    furniture: int = 0,
+    fire: int = 0,
+    smoke: int = 0,
+    fps: float = 0.0,
+    inference_ms: float = 0.0,
+    drop_avg_per_s: float = 0.0,
+    rtsp_on: bool = False,
+    udp_on: bool = False,
+    # These are accepted to match main.py's call signature.
+    # This OpenCV implementation does not load custom fonts.
+    font_paths=(),
+    emoji_font_paths=(),
+    text_size_px: int = 35,
+    outline_px: int = 2,
+    counts_pos=(35, 115),
+    metrics_pos_from_bottom=(35, 260),
+    toggles_pos_from_bottom=(330, 260),
+    row_gap_px: int = 10,
+):
+    """
+    DJI-style HUD layout (OpenCV-only).
+
+    Notes:
+    - This function exists primarily to satisfy main.py's import/call.
+    - It uses OpenCV built-in fonts (Hershey). If you want Roboto/emoji rendering,
+      switch this function to a PIL-based renderer.
+    """
+    if frame is None:
+        return frame
+
+    H, W = frame.shape[:2]
+    if H <= 0 or W <= 0:
+        return frame
+
+    # Approximate mapping from pixel text size to OpenCV font scale.
+    # (Hershey font size is not directly in pixels.)
+    font_scale = max(0.4, float(text_size_px) / 30.0)
+    thickness = max(1, int(round(font_scale * 2.0)))
+
+    # --- Top-left counts block ---
+    cx, cy = int(counts_pos[0]), int(counts_pos[1])
+    counts_lines = [
+        f"People: {int(people)}",
+        f"Furniture: {int(furniture)}",
+        f"Fire: {int(fire)}",
+        f"Smoke: {int(smoke)}",
+    ]
+
+    # Determine line height from a sample
+    (_, th), _ = cv2.getTextSize("Ag", cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+    line_h = int(th + max(6, row_gap_px))
+
+    y = cy
+    for line in counts_lines:
+        _draw_text_outline(
+            frame,
+            line,
+            (cx, y),
+            font_scale,
+            color=(255, 255, 255),
+            outline_color=(0, 0, 0),
+            outline_px=int(outline_px),
+            thickness=int(thickness),
+        )
+        y += line_h
+
+    # --- Bottom-left metrics block ---
+    mx, bottom_margin = int(metrics_pos_from_bottom[0]), int(metrics_pos_from_bottom[1])
+    metrics_lines = [
+        f"FPS: {float(fps):.1f}",
+        f"Inference: {float(inference_ms):.1f} ms",
+        f"Dropped: {float(drop_avg_per_s):.1f}/s",
+    ]
+
+    # Draw upward from bottom
+    y = H - bottom_margin
+    for line in reversed(metrics_lines):
+        _draw_text_outline(
+            frame,
+            line,
+            (mx, y),
+            font_scale,
+            color=(255, 255, 255),
+            outline_color=(0, 0, 0),
+            outline_px=int(outline_px),
+            thickness=int(thickness),
+        )
+        y -= line_h
+
+    # --- Bottom-right toggles block ---
+    right_margin, bottom_margin_r = int(toggles_pos_from_bottom[0]), int(toggles_pos_from_bottom[1])
+    toggles_lines = [
+        f"RTSP: {'ON' if rtsp_on else 'OFF'}",
+        f"UDP: {'ON' if udp_on else 'OFF'}",
+    ]
+
+    # Compute widest line to right-align
+    widths = [
+        cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0][0]
+        for t in toggles_lines
+    ]
+    block_w = int(max(widths) if widths else 0)
+
+    x = max(0, W - right_margin - block_w)
+    y = H - bottom_margin_r
+    for line in reversed(toggles_lines):
+        _draw_text_outline(
+            frame,
+            line,
+            (x, y),
+            font_scale,
+            color=(255, 255, 255),
+            outline_color=(0, 0, 0),
+            outline_px=int(outline_px),
+            thickness=int(thickness),
+        )
+        y -= line_h
+
+    return frame
 
 
 def draw_hud(
