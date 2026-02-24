@@ -23,6 +23,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import time
 
+import numpy as np
+
 
 def merge_detections(
     people_results,
@@ -45,16 +47,41 @@ def merge_detections(
     ts = time.time() if timestamp is None else float(timestamp)
     dets: List[Dict[str, Any]] = []
 
+    def _safe_track_ids(boxes_obj):
+        """Return a CPU numpy array of track IDs aligned with boxes, or None."""
+        if boxes_obj is None:
+            return None
+        tids = getattr(boxes_obj, "id", None)
+        if tids is None:
+            return None
+        try:
+            return tids.detach().cpu().numpy()
+        except Exception:
+            try:
+                return np.array(tids)
+            except Exception:
+                return None
+
     # ---- People detections ----
     if people_results:
         for r in people_results:
             if r.boxes is None:
                 continue
-            for b in r.boxes:
+            tids = _safe_track_ids(r.boxes)
+            for bi, b in enumerate(r.boxes):
                 cls_id = int(b.cls[0])
                 conf = float(b.conf[0]) if b.conf is not None else 0.0
                 xyxy = b.xyxy[0].tolist()
                 label = people_model.names[cls_id].lower()
+
+                track_id = None
+                try:
+                    if getattr(b, "id", None) is not None:
+                        track_id = int(b.id[0])
+                    elif tids is not None and bi < len(tids):
+                        track_id = int(tids[bi])
+                except Exception:
+                    track_id = None
 
                 dets.append(
                     {
@@ -63,6 +90,7 @@ def merge_detections(
                         "confidence": conf,
                         "bbox_xyxy": xyxy,
                         "mask": None,
+                        "track_id": track_id,
                         "source": "people",
                     }
                 )
@@ -82,11 +110,21 @@ def merge_detections(
         for r in fire_results:
             if r.boxes is None:
                 continue
-            for b in r.boxes:
+            tids = _safe_track_ids(r.boxes)
+            for bi, b in enumerate(r.boxes):
                 cls_id = int(b.cls[0])
                 conf = float(b.conf[0]) if b.conf is not None else 0.0
                 xyxy = b.xyxy[0].tolist()
                 label = fire_model.names[cls_id].lower()
+
+                track_id = None
+                try:
+                    if getattr(b, "id", None) is not None:
+                        track_id = int(b.id[0])
+                    elif tids is not None and bi < len(tids):
+                        track_id = int(tids[bi])
+                except Exception:
+                    track_id = None
 
                 dets.append(
                     {
@@ -95,6 +133,7 @@ def merge_detections(
                         "confidence": conf,
                         "bbox_xyxy": xyxy,
                         "mask": None,  # fire model is detect-only for now
+                        "track_id": track_id,
                         "source": "fire",
                     }
                 )

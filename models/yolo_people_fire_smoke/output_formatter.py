@@ -76,9 +76,15 @@ def to_unity_udp_packet(
         x1, y1, x2, y2 = (float(b) for b in bbox)
         cx, cy, w, h = _xyxy_to_xywhn(x1, y1, x2, y2, float(width), float(height))
 
+        raw_id = det.get("track_id", i)
+        try:
+            det_id = int(raw_id)
+        except Exception:
+            det_id = int(i)
+
         dets.append(
             {
-                "id": int(i),
+                "id": det_id,
                 "cls": int(class_map.get(cls_name, -1)),
                 "conf": float(conf),
                 "cx": float(cx),

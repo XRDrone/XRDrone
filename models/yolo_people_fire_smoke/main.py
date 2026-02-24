@@ -15,10 +15,16 @@ from ultralytics import YOLO
 
 import settings as S
 from detection_logger import save_detections_json
-from hud import draw_hud, load_rgba_overlay, apply_rgba_overlay_fullframe
+from hud import (
+    apply_rgba_overlay_fullframe,
+    draw_dji_hud,
+    draw_hud,
+    load_rgba_overlay,
+)
 from merger import count_by_class, merge_detections
 from output_formatter import to_unity_udp_packet
 from streaming import RTSPStreamer, UDPPublisher
+from tracker import OpenCVKalmanIOUTracker
 
 
 def _normalize_names(names):
@@ -34,11 +40,9 @@ def _remap_people_names(names_dict: Dict[int, str]) -> Dict[int, str]:
     names = dict(names_dict)
     inv = {v.lower(): k for k, v in names.items()}
 
-    # Single-class custom models often label the only class as 0.
     if len(names) == 1:
         return {0: "person"}
 
-    # Some custom models call it "item".
     if "person" not in inv and "item" in inv:
         names[int(inv["item"])] = "person"
 
@@ -75,7 +79,6 @@ def _resolve_class_ids(names_dict: Dict[int, str], wanted_names: Sequence[str]) 
             ids.append(inv[ali])
             continue
 
-        # If the model uses "sofa" instead of "couch" (rare), accept it.
         if name == "couch" and "sofa" in inv:
             ids.append(inv["sofa"])
 
@@ -158,7 +161,6 @@ def _open_capture(input_mode: str, camera_source: str):
     if not cap.isOpened():
         raise RuntimeError(f"Could not open camera index={index} backend={backend_desc}")
 
-    # Best-effort request to camera.
     if S.REQUEST_CAMERA_1080P and S.FORCE_OUTPUT_1080P:
         try:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(S.OUTPUT_WIDTH))
@@ -186,6 +188,7 @@ def draw_masks(
     alpha=0.35,
     text_scale=0.6,
     text_thickness=2,
+    show_label: bool = True,
 ):
     """Overlay masks (if present) + per-instance labels; supports per-class colors."""
     if not results:
@@ -236,12 +239,73 @@ def draw_masks(
                     frame[m].astype(np.float32) * (1.0 - alpha) + color_arr * alpha
                 ).astype(np.uint8)
 
-        label = f"{name} {float(conf[i]) * 100:.1f}%"
+        if show_label:
+            label = f"{name} {float(conf[i]) * 100:.1f}%"
+            (tw, th), _ = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness
+            )
+            tx = max(0, min(w_img - tw - 6, x1i))
+            ty = max(th + 6, min(h_img - 2, y1i))
+            bx1, by1 = tx, ty - th - 6
+            bx2, by2 = tx + tw + 6, ty
+            cv2.rectangle(frame, (bx1, by1), (bx2, by2), color, thickness=-1)
+            cv2.putText(
+                frame,
+                label,
+                (tx + 3, by2 - 3),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                text_scale,
+                (255, 255, 255),
+                text_thickness,
+                cv2.LINE_AA,
+            )
+
+    return frame
+
+
+def draw_tracked_boxes(
+    frame: np.ndarray,
+    detections: Sequence[dict],
+    *,
+    colors: Dict[str, tuple],
+    default_color=(255, 255, 255),
+    text_scale: float = 0.6,
+    text_thickness: int = 2,
+    box_thickness: int = 2,
+):
+    """Draw bbox + (class, conf, track_id) from merged detections."""
+    h_img, w_img = frame.shape[:2]
+    for det in detections:
+        bbox = det.get("bbox_xyxy")
+        if not bbox or len(bbox) != 4:
+            continue
+
+        x1, y1, x2, y2 = (int(float(v)) for v in bbox)
+        x1 = max(0, min(w_img - 1, x1))
+        x2 = max(0, min(w_img - 1, x2))
+        y1 = max(0, min(h_img - 1, y1))
+        y2 = max(0, min(h_img - 1, y2))
+
+        cls_name = str(det.get("class") or "obj").lower()
+        color = colors.get(cls_name, default_color)
+        conf = float(det.get("confidence", 0.0))
+        tid = det.get("track_id", None)
+
+        if tid is None:
+            label = f"{cls_name} {conf * 100:.1f}%"
+        else:
+            try:
+                label = f"{cls_name} #{int(tid)} {conf * 100:.1f}%"
+            except Exception:
+                label = f"{cls_name} {conf * 100:.1f}%"
+
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, int(box_thickness))
+
         (tw, th), _ = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness
+            label, cv2.FONT_HERSHEY_SIMPLEX, float(text_scale), int(text_thickness)
         )
-        tx = max(0, min(w_img - tw - 6, x1i))
-        ty = max(th + 6, min(h_img - 2, y1i))
+        tx = max(0, min(w_img - tw - 6, x1))
+        ty = max(th + 6, min(h_img - 2, y1))
         bx1, by1 = tx, ty - th - 6
         bx2, by2 = tx + tw + 6, ty
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), color, thickness=-1)
@@ -250,9 +314,9 @@ def draw_masks(
             label,
             (tx + 3, by2 - 3),
             cv2.FONT_HERSHEY_SIMPLEX,
-            text_scale,
-            (255, 255, 255),
-            text_thickness,
+            float(text_scale),
+            (0, 0, 0),
+            int(text_thickness),
             cv2.LINE_AA,
         )
 
@@ -336,7 +400,6 @@ def _parse_args():
 
 
 def _send_udp_once(udp: UDPPublisher, pkt: dict) -> None:
-    """Send + print the exact JSON string that UDPPublisher sends."""
     msg = json.dumps(pkt)
     print(msg)
     try:
@@ -378,7 +441,6 @@ def run_test(args) -> int:
     if S.ATTACH_FIRE_MASKS_TO_LOG:
         _attach_masks_to_merged(merged, fire_results, "fire")
 
-    # Normalize a couple legacy variants.
     for det in merged:
         if det.get("class") == "item":
             det["class"] = "person"
@@ -395,15 +457,12 @@ def run_test(args) -> int:
         min_conf=S.UDP_MIN_CONF,
     )
 
-    # Print the *exact* JSON string the UDP sender uses.
     print("[UDP] JSON payload (one-line):")
     print(json.dumps(pkt))
 
-    # Also print a readable version.
     print("\n[UDP] JSON payload (pretty):")
     print(json.dumps(pkt, indent=2))
 
-    # Optional: send the packet once.
     if S.ENABLE_UDP:
         udp = UDPPublisher(S.UDP_IP, S.UDP_PORT)
         try:
@@ -411,9 +470,7 @@ def run_test(args) -> int:
         finally:
             udp.close()
 
-    # Optional GUI display
     if not args.no_gui:
-        # Apply DJI overlay in test view only (purely visual).
         dji_overlay = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
         if S.DJI_MENU_OVERLAY_ENABLED_DEFAULT and dji_overlay is not None:
             frame = apply_rgba_overlay_fullframe(frame, dji_overlay)
@@ -437,16 +494,27 @@ def run_live(args) -> int:
     fire_on = bool(S.FIRE_ON_DEFAULT)
     recording_enabled = bool(S.RECORDING_ENABLED_DEFAULT)
 
-    # Visual toggles
     draw_detections = bool(S.DRAW_DETECTIONS_DEFAULT)
     hud_enabled = bool(S.HUD_ENABLED_DEFAULT)
 
-    # DJI overlay toggle (purely visual)
+    tracking_enabled = bool(getattr(S, "TRACKING_ENABLED_DEFAULT", False))
+    tracking_method = str(getattr(S, "TRACKING_METHOD", "opencv")).lower().strip()
+    draw_track_ids = bool(getattr(S, "DRAW_TRACK_IDS", True))
+
+    tracker = None
+    if tracking_enabled and tracking_method == "opencv":
+        tracker = OpenCVKalmanIOUTracker(
+            min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
+            max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
+            per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
+            process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
+            measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
+        )
+
     dji_overlay_on = bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT)
     dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
 
-    # Track which camera we are using at runtime (only relevant when INPUT_MODE="camera")
-    active_camera_source = S.CAMERA_SOURCE_DEFAULT  # "webcam" | "capture_card"
+    active_camera_source = S.CAMERA_SOURCE_DEFAULT
 
     all_detections: List[dict] = []
 
@@ -478,17 +546,14 @@ def run_live(args) -> int:
                 break
             frame_id += 1
 
-            # Timestamp
             if is_file_source:
                 t_video = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
                 now = video_start_wall + t_video
             else:
                 now = time.time()
 
-            # Force output/display/UDP resolution.
             frame = _format_frame(frame)
 
-            # FPS estimates
             wall_now = time.time()
             dt = wall_now - t_prev
             t_prev = wall_now
@@ -504,20 +569,41 @@ def run_live(args) -> int:
                 window_frames = 0
                 window_start = wall_now
 
-            # Inference
             people_results = []
             fire_results = []
 
+            use_ultra_track = bool(tracking_enabled and tracking_method == "ultralytics")
+            ultra_tracker_yaml = str(getattr(S, "ULTRALYTICS_TRACKER", "bytetrack.yaml"))
+
             if people_on:
-                people_results = people_seg_model.predict(
-                    frame,
-                    conf=S.PEOPLE_CONF,
-                    classes=detect_class_ids,
-                    **pred_kw,
-                )
+                if use_ultra_track:
+                    people_results = people_seg_model.track(
+                        frame,
+                        conf=S.PEOPLE_CONF,
+                        classes=detect_class_ids,
+                        persist=True,
+                        tracker=ultra_tracker_yaml,
+                        **pred_kw,
+                    )
+                else:
+                    people_results = people_seg_model.predict(
+                        frame,
+                        conf=S.PEOPLE_CONF,
+                        classes=detect_class_ids,
+                        **pred_kw,
+                    )
 
             if fire_on:
-                fire_results = fire_model.predict(frame, conf=S.FIRE_CONF, **pred_kw)
+                if use_ultra_track:
+                    fire_results = fire_model.track(
+                        frame,
+                        conf=S.FIRE_CONF,
+                        persist=True,
+                        tracker=ultra_tracker_yaml,
+                        **pred_kw,
+                    )
+                else:
+                    fire_results = fire_model.predict(frame, conf=S.FIRE_CONF, **pred_kw)
 
             merged = merge_detections(
                 people_results,
@@ -536,12 +622,28 @@ def run_live(args) -> int:
                 if det.get("class") == "item":
                     det["class"] = "person"
 
+                # Ensure track IDs are globally unique across separate model trackers.
+                if use_ultra_track and det.get("track_id") is not None:
+                    try:
+                        base_id = int(det["track_id"])
+                        if str(det.get("source", "")).lower().startswith("fire"):
+                            det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_FIRE", 1_000_000))
+                        else:
+                            det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_PEOPLE", 0))
+                    except Exception:
+                        pass
+
+            # OpenCV tracker assigns/maintains track_id across frames (in-place).
+            if tracking_enabled and tracking_method == "opencv" and tracker is not None:
+                tracker.update(merged)
+
             if merged:
                 all_detections.extend(merged)
 
             counts = count_by_class(merged)
 
-            # Visual overlays (drawing only; UDP still runs)
+            want_track_overlay = bool(tracking_enabled and draw_track_ids)
+
             if draw_detections and people_on:
                 frame = draw_masks(
                     frame,
@@ -552,6 +654,7 @@ def run_live(args) -> int:
                     alpha=S.MASK_ALPHA,
                     text_scale=S.MASK_TEXT_SCALE,
                     text_thickness=S.MASK_TEXT_THICKNESS,
+                    show_label=not want_track_overlay,
                 )
 
             if draw_detections and fire_on:
@@ -560,13 +663,25 @@ def run_live(args) -> int:
                     fire_results,
                     names=fire_label.names,
                     colors=S.COLORS,
-                    default_color=S.COLORS.get("fire", (0, 255, 255)),
+                    default_color=S.COLORS.get("fire", (255, 255, 255)),
                     alpha=S.MASK_ALPHA,
                     text_scale=S.MASK_TEXT_SCALE,
                     text_thickness=S.MASK_TEXT_THICKNESS,
+                    show_label=not want_track_overlay,
                 )
 
-            # Inference timing (Ultralytics provides ms)
+            # Draw tracked boxes/IDs last so text stays readable.
+            if draw_detections and want_track_overlay:
+                frame = draw_tracked_boxes(
+                    frame,
+                    merged,
+                    colors=S.COLORS,
+                    default_color=(255, 255, 255),
+                    text_scale=S.MASK_TEXT_SCALE,
+                    text_thickness=S.MASK_TEXT_THICKNESS,
+                    box_thickness=2,
+                )
+
             inf_times = []
             if people_on and people_results:
                 inf_times.append(people_results[0].speed.get("inference", 0.0))
@@ -585,47 +700,72 @@ def run_live(args) -> int:
             chair_count = counts.get("chair", 0)
             couch_count = counts.get("couch", 0) + counts.get("sofa", 0)
             table_count = counts.get("dining table", 0)
+            furniture_count = int(chair_count + couch_count + table_count)
 
             net_on = _network_allowed(recording_enabled)
 
-            # HUD
             if hud_enabled:
-                lines = [
-                    f"FPS: {avg_fps:5.2f}",
-                    f"Model inference: {avg_inf:5.1f} ms",
-                    f"People: {people_count}",
-                    f"Chair: {chair_count}",
-                    f"Couch/Sofa: {couch_count}",
-                    f"Dining table: {table_count}",
-                    f"Fire: {fire_count}",
-                    f"Smoke: {smoke_count}",
-                    f"Dropped frames (avg/s): {avg_drops:.1f}",
-                    f"Input: {input_desc}",
-                    f"HUD: {'ON' if hud_enabled else 'OFF'} (H)",
-                    f"Det overlays: {'ON' if draw_detections else 'OFF'} (V)",
-                    f"DJI overlay: {'ON' if (dji_overlay_on and dji_overlay_bgra is not None) else 'OFF'} (U)",
-                    f"RTSP: {'ON' if (rtsp and net_on) else 'OFF'}",
-                    f"UDP:  {'ON' if (udp and net_on) else 'OFF'}",
-                    f"RECORDING: {'ON' if recording_enabled else 'OFF'} (R)",
-                    f"People model: {'ON' if people_on else 'OFF'} (K)",
-                    f"Fire/Smoke model: {'ON' if fire_on else 'OFF'} (L)",
-                    f"Toggle input: (I)",
-                ]
-                frame = draw_hud(
-                    frame,
-                    lines,
-                    anchor=S.HUD_ANCHOR,
-                    margin=S.HUD_MARGIN,
-                    alpha=S.HUD_ALPHA,
-                    font_scale=S.HUD_FONT_SCALE,
-                    thickness=S.HUD_THICKNESS,
-                )
+                if str(getattr(S, "HUD_STYLE", "classic")).lower().strip() == "dji":
+                    frame = draw_dji_hud(
+                        frame,
+                        people=people_count,
+                        furniture=furniture_count,
+                        fire=fire_count,
+                        smoke=smoke_count,
+                        fps=avg_fps,
+                        inference_ms=avg_inf,
+                        drop_avg_per_s=avg_drops,
+                        rtsp_on=bool(rtsp and net_on),
+                        udp_on=bool(udp and net_on),
+                        font_paths=getattr(S, "HUD_FONT_PATHS", ("Roboto-Medium.ttf",)),
+                        emoji_font_paths=getattr(S, "HUD_EMOJI_FONT_PATHS", ()),
+                        text_size_px=int(getattr(S, "HUD_TEXT_SIZE_PX", 35)),
+                        outline_px=int(getattr(S, "HUD_OUTLINE_PX", 2)),
+                        counts_pos=tuple(getattr(S, "HUD_COUNTS_POS", (35, 115))),
+                        metrics_pos_from_bottom=tuple(
+                            getattr(S, "HUD_METRICS_POS_FROM_BOTTOM", (35, 260))
+                        ),
+                        toggles_pos_from_bottom=tuple(
+                            getattr(S, "HUD_TOGGLES_POS_FROM_BOTTOM", (330, 260))
+                        ),
+                        row_gap_px=int(getattr(S, "HUD_ROW_GAP_PX", 10)),
+                    )
+                else:
+                    lines = [
+                        f"FPS: {avg_fps:5.2f}",
+                        f"Model inference: {avg_inf:5.1f} ms",
+                        f"People: {people_count}",
+                        f"Chair: {chair_count}",
+                        f"Couch/Sofa: {couch_count}",
+                        f"Dining table: {table_count}",
+                        f"Fire: {fire_count}",
+                        f"Smoke: {smoke_count}",
+                        f"Dropped frames (avg/s): {avg_drops:.1f}",
+                        f"Input: {input_desc}",
+                        f"HUD: {'ON' if hud_enabled else 'OFF'} (H)",
+                        f"Det overlays: {'ON' if draw_detections else 'OFF'} (V)",
+                        f"Tracking IDs: {'ON' if tracking_enabled else 'OFF'} (T) [{tracking_method}]",
+                        f"DJI overlay: {'ON' if (dji_overlay_on and dji_overlay_bgra is not None) else 'OFF'} (U)",
+                        f"RTSP: {'ON' if (rtsp and net_on) else 'OFF'}",
+                        f"UDP:  {'ON' if (udp and net_on) else 'OFF'}",
+                        f"RECORDING: {'ON' if recording_enabled else 'OFF'} (R)",
+                        f"People model: {'ON' if people_on else 'OFF'} (K)",
+                        f"Fire/Smoke model: {'ON' if fire_on else 'OFF'} (L)",
+                        f"Toggle input: (I)",
+                    ]
+                    frame = draw_hud(
+                        frame,
+                        lines,
+                        anchor=S.HUD_ANCHOR,
+                        margin=S.HUD_MARGIN,
+                        alpha=S.HUD_ALPHA,
+                        font_scale=S.HUD_FONT_SCALE,
+                        thickness=S.HUD_THICKNESS,
+                    )
 
-            # DJI menu overlay (PNG on top of everything; purely visual)
             if dji_overlay_on and dji_overlay_bgra is not None:
                 frame = apply_rgba_overlay_fullframe(frame, dji_overlay_bgra)
 
-            # Output video
             allow_output = (not S.REQUIRE_CONSENT_FOR_OUTPUT) or recording_enabled
             if S.SAVE_OUTPUT and allow_output:
                 if out is None:
@@ -633,7 +773,6 @@ def run_live(args) -> int:
                     out = cv2.VideoWriter(S.OUTPUT_VIDEO, fourcc, target_fps, (w, h))
                 out.write(frame)
 
-            # UDP/RTSP
             if net_on:
                 if udp is not None:
                     h, w = frame.shape[:2]
@@ -692,6 +831,20 @@ def run_live(args) -> int:
 
             elif key in S.KEY_TOGGLE_DJI_OVERLAY:
                 dji_overlay_on = not dji_overlay_on
+
+            elif key in getattr(S, "KEY_TOGGLE_TRACKING", (ord("t"), ord("T"))):
+                tracking_enabled = not tracking_enabled
+                if tracking_enabled and tracking_method == "opencv":
+                    if tracker is None:
+                        tracker = OpenCVKalmanIOUTracker(
+                            min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
+                            max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
+                            per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
+                            process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
+                            measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
+                        )
+                    else:
+                        tracker.reset()
 
             elif key in S.KEY_TOGGLE_INPUT and S.INPUT_MODE.lower() == "camera":
                 prev = active_camera_source

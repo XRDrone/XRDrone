@@ -47,6 +47,7 @@ def prepare_detection_packet(det: Dict[str, Any]) -> Dict[str, Any]:
     packet: Dict[str, Any] = {
         "timestamp_epoch": ts,
         "timestamp_local": format_timestamp_local(ts),
+        "track_id": det.get("track_id"),
         "class": det.get("class"),
         "confidence": float(det.get("confidence", 0.0)),
         "bbox_xyxy": det.get("bbox_xyxy"),
