@@ -2,7 +2,7 @@
 *.csv
 *.json
 *.mp4
-*.pt
-models/yolo_people_fire_smoke/__pycache__
+models/yolo_people_fire_smoke/__pycache__/
+models/yolo_people_fire_smoke/runs/
 *__pycache__
 *.avif

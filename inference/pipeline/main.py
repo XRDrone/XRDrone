@@ -1,4 +1,28 @@
-# main.py
+"""
+main.py
+
+Entry point for the XRDrone local inference pipeline.
+
+Coordinates the full runtime loop:
+  - Loads YOLO people and fire/smoke models
+  - Captures frames from webcam, capture card, or video file
+  - Runs detection and optional tracking
+  - Merges model outputs into a unified detection list
+  - Builds UDP packets for Unity consumption
+  - Streams frames over RTSP and/or displays locally
+  - Applies overlays, HUD elements, and runtime toggles
+
+Key responsibilities:
+  - Pipeline orchestration and runtime control
+  - Model initialization and inference scheduling
+  - Frame processing, rendering, and networking
+  - Handling keyboard controls and user consent toggles
+
+Provides:
+  - run_test(): single-image inference and UDP preview
+  - run_live(): continuous live pipeline execution
+  - main(): CLI entrypoint for selecting test vs live mode
+"""
 from __future__ import annotations
 
 import argparse
@@ -14,15 +38,9 @@ import torch
 from ultralytics import YOLO
 
 import settings as S
-from detection_logger import save_detections_json
-from hud import (
-    apply_rgba_overlay_fullframe,
-    draw_dji_hud,
-    draw_hud,
-    load_rgba_overlay,
-)
 from merger import count_by_class, merge_detections
 from output_formatter import to_unity_udp_packet
+from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
 from streaming import RTSPStreamer, UDPPublisher
 from tracker import OpenCVKalmanIOUTracker
 
@@ -495,7 +513,6 @@ def run_live(args) -> int:
     recording_enabled = bool(S.RECORDING_ENABLED_DEFAULT)
 
     draw_detections = bool(S.DRAW_DETECTIONS_DEFAULT)
-    hud_enabled = bool(S.HUD_ENABLED_DEFAULT)
 
     tracking_enabled = bool(getattr(S, "TRACKING_ENABLED_DEFAULT", False))
     tracking_method = str(getattr(S, "TRACKING_METHOD", "opencv")).lower().strip()
@@ -516,14 +533,12 @@ def run_live(args) -> int:
 
     active_camera_source = S.CAMERA_SOURCE_DEFAULT
 
-    all_detections: List[dict] = []
-
     fps_hist = deque(maxlen=30)
     inf_hist = deque(maxlen=30)
     drop_hist = deque(maxlen=30)
     t_prev = time.time()
 
-    cap, is_file_source, target_fps, video_start_wall, input_desc = _open_capture(
+    cap, is_file_source, target_fps, video_start_wall, _input_desc = _open_capture(
         S.INPUT_MODE, active_camera_source
     )
 
@@ -637,11 +652,7 @@ def run_live(args) -> int:
             if tracking_enabled and tracking_method == "opencv" and tracker is not None:
                 tracker.update(merged)
 
-            if merged:
-                all_detections.extend(merged)
-
             counts = count_by_class(merged)
-
             want_track_overlay = bool(tracking_enabled and draw_track_ids)
 
             if draw_detections and people_on:
@@ -682,86 +693,17 @@ def run_live(args) -> int:
                     box_thickness=2,
                 )
 
-            inf_times = []
-            if people_on and people_results:
-                inf_times.append(people_results[0].speed.get("inference", 0.0))
-            if fire_on and fire_results:
-                inf_times.append(fire_results[0].speed.get("inference", 0.0))
-            if inf_times:
-                inf_hist.append(sum(inf_times) / len(inf_times))
-
-            avg_fps = sum(fps_hist) / len(fps_hist) if fps_hist else 0.0
-            avg_inf = sum(inf_hist) / len(inf_hist) if inf_hist else 0.0
-            avg_drops = sum(drop_hist) / len(drop_hist) if drop_hist else 0.0
-
-            people_count = counts.get("person", 0) + counts.get("item", 0)
-            fire_count = counts.get("fire", 0)
-            smoke_count = counts.get("smoke", 0)
-            chair_count = counts.get("chair", 0)
-            couch_count = counts.get("couch", 0) + counts.get("sofa", 0)
-            table_count = counts.get("dining table", 0)
-            furniture_count = int(chair_count + couch_count + table_count)
+            # Keep these computed (even without HUD) to preserve prior behavior and for debugging.
+            _ = counts
+            _people_count = counts.get("person", 0) + counts.get("item", 0)
+            _fire_count = counts.get("fire", 0)
+            _smoke_count = counts.get("smoke", 0)
+            _chair_count = counts.get("chair", 0)
+            _couch_count = counts.get("couch", 0) + counts.get("sofa", 0)
+            _table_count = counts.get("dining table", 0)
+            _furniture_count = int(_chair_count + _couch_count + _table_count)
 
             net_on = _network_allowed(recording_enabled)
-
-            if hud_enabled:
-                if str(getattr(S, "HUD_STYLE", "classic")).lower().strip() == "dji":
-                    frame = draw_dji_hud(
-                        frame,
-                        people=people_count,
-                        furniture=furniture_count,
-                        fire=fire_count,
-                        smoke=smoke_count,
-                        fps=avg_fps,
-                        inference_ms=avg_inf,
-                        drop_avg_per_s=avg_drops,
-                        rtsp_on=bool(rtsp and net_on),
-                        udp_on=bool(udp and net_on),
-                        font_paths=getattr(S, "HUD_FONT_PATHS", ("Roboto-Medium.ttf",)),
-                        emoji_font_paths=getattr(S, "HUD_EMOJI_FONT_PATHS", ()),
-                        text_size_px=int(getattr(S, "HUD_TEXT_SIZE_PX", 35)),
-                        outline_px=int(getattr(S, "HUD_OUTLINE_PX", 2)),
-                        counts_pos=tuple(getattr(S, "HUD_COUNTS_POS", (35, 115))),
-                        metrics_pos_from_bottom=tuple(
-                            getattr(S, "HUD_METRICS_POS_FROM_BOTTOM", (35, 260))
-                        ),
-                        toggles_pos_from_bottom=tuple(
-                            getattr(S, "HUD_TOGGLES_POS_FROM_BOTTOM", (330, 260))
-                        ),
-                        row_gap_px=int(getattr(S, "HUD_ROW_GAP_PX", 10)),
-                    )
-                else:
-                    lines = [
-                        f"FPS: {avg_fps:5.2f}",
-                        f"Model inference: {avg_inf:5.1f} ms",
-                        f"People: {people_count}",
-                        f"Chair: {chair_count}",
-                        f"Couch/Sofa: {couch_count}",
-                        f"Dining table: {table_count}",
-                        f"Fire: {fire_count}",
-                        f"Smoke: {smoke_count}",
-                        f"Dropped frames (avg/s): {avg_drops:.1f}",
-                        f"Input: {input_desc}",
-                        f"HUD: {'ON' if hud_enabled else 'OFF'} (H)",
-                        f"Det overlays: {'ON' if draw_detections else 'OFF'} (V)",
-                        f"Tracking IDs: {'ON' if tracking_enabled else 'OFF'} (T) [{tracking_method}]",
-                        f"DJI overlay: {'ON' if (dji_overlay_on and dji_overlay_bgra is not None) else 'OFF'} (U)",
-                        f"RTSP: {'ON' if (rtsp and net_on) else 'OFF'}",
-                        f"UDP:  {'ON' if (udp and net_on) else 'OFF'}",
-                        f"RECORDING: {'ON' if recording_enabled else 'OFF'} (R)",
-                        f"People model: {'ON' if people_on else 'OFF'} (K)",
-                        f"Fire/Smoke model: {'ON' if fire_on else 'OFF'} (L)",
-                        f"Toggle input: (I)",
-                    ]
-                    frame = draw_hud(
-                        frame,
-                        lines,
-                        anchor=S.HUD_ANCHOR,
-                        margin=S.HUD_MARGIN,
-                        alpha=S.HUD_ALPHA,
-                        font_scale=S.HUD_FONT_SCALE,
-                        thickness=S.HUD_THICKNESS,
-                    )
 
             if dji_overlay_on and dji_overlay_bgra is not None:
                 frame = apply_rgba_overlay_fullframe(frame, dji_overlay_bgra)
@@ -826,9 +768,6 @@ def run_live(args) -> int:
             elif key in S.KEY_TOGGLE_DRAW:
                 draw_detections = not draw_detections
 
-            elif key in S.KEY_TOGGLE_HUD:
-                hud_enabled = not hud_enabled
-
             elif key in S.KEY_TOGGLE_DJI_OVERLAY:
                 dji_overlay_on = not dji_overlay_on
 
@@ -856,7 +795,7 @@ def run_live(args) -> int:
                     pass
 
                 try:
-                    cap, is_file_source, target_fps, video_start_wall, input_desc = _open_capture(
+                    cap, is_file_source, target_fps, video_start_wall, _input_desc = _open_capture(
                         "camera", active_camera_source
                     )
 
@@ -873,7 +812,7 @@ def run_live(args) -> int:
                 except Exception as e:
                     print("Toggle input failed:", e)
                     active_camera_source = prev
-                    cap, is_file_source, target_fps, video_start_wall, input_desc = _open_capture(
+                    cap, is_file_source, target_fps, video_start_wall, _input_desc = _open_capture(
                         "camera", active_camera_source
                     )
 
@@ -897,10 +836,6 @@ def run_live(args) -> int:
 
         if udp is not None:
             udp.close()
-
-    allow_log = (not S.REQUIRE_CONSENT_FOR_LOG) or recording_enabled
-    if all_detections and allow_log:
-        save_detections_json(all_detections, S.DETECTION_LOG_PATH)
 
     return 0
 

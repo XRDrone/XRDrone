@@ -1,4 +1,3 @@
-# merger.py
 """
 merger.py
 
@@ -14,10 +13,9 @@ Each merged detection is a dict with:
   - source: str ("people" or "fire") indicating which model produced it
 
 Also provides:
-  - count_by_class(): small helper to aggregate detections by class label
-    for HUD display and basic analytics.
+  - count_by_class(): helper to aggregate detections by class label
+    for HUD display and analytics.
 """
-
 
 from __future__ import annotations
 from typing import Any, Dict, List, Optional

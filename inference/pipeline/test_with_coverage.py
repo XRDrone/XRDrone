@@ -1,3 +1,27 @@
+"""
+test_with_coverage.py
+
+Happy-path validation test for the XRDrone detection pipeline.
+
+Runs a short video scan to verify:
+  - model loading
+  - video input handling
+  - people detection
+  - fire detection
+  - smoke detection
+  - inference timing and performance metrics
+
+Produces:
+  - detection success assertions
+  - average inference timing
+  - FPS measurements
+  - component-level coverage summary
+
+Used for:
+  - regression testing
+  - environment verification
+  - demo readiness checks
+"""
 from ultralytics import YOLO
 import cv2
 import time
@@ -14,7 +38,6 @@ def test_combined_detection_with_coverage():
         "people_detection": False,
         "fire_detection": False,
         "smoke_detection": False,
-        "hud_functions": False,
         "performance_metrics": False,
         "early_exit": False,
     }
@@ -51,9 +74,7 @@ def test_combined_detection_with_coverage():
 
             # People detection with timing
             people_start = time.time()
-            people_results = people_model.predict(
-                frame, conf=0.4, classes=[0], verbose=False
-            )
+            people_results = people_model.predict(frame, conf=0.4, classes=[0], verbose=False)
             people_time = time.time() - people_start
 
             if len(people_results[0].boxes) > 0:
@@ -76,28 +97,6 @@ def test_combined_detection_with_coverage():
                     smoke_found = True
                     coverage["smoke_detection"] = True
 
-            # Test HUD functions
-            try:
-                from hud import draw_hud, draw_boxes
-
-                # Test drawing functions
-                test_frame = frame.copy()
-                test_frame = draw_boxes(
-                    test_frame, people_results, {"person": (255, 0, 0)}, people_model
-                )
-                test_frame = draw_boxes(
-                    test_frame,
-                    fire_results,
-                    {"fire": (255, 0, 255), "smoke": (0, 255, 255)},
-                    fire_model,
-                )
-
-                test_lines = ["FPS: 30.00", "People: 1", "Fire: 1", "Smoke: 0"]
-                test_frame = draw_hud(test_frame, test_lines, anchor="tl")
-                coverage["hud_functions"] = True
-            except ImportError:
-                pass
-
             # Stop early if all found
             if people_found and fire_found and smoke_found:
                 coverage["early_exit"] = True
@@ -107,9 +106,7 @@ def test_combined_detection_with_coverage():
 
         # Performance metrics
         if inference_times:
-            avg_inference = (
-                sum(inference_times) / len(inference_times) * 1000
-            )  # convert to ms
+            avg_inference = (sum(inference_times) / len(inference_times) * 1000)  # ms
             total_time = time.time() - start_time
             actual_fps = frame_count / total_time if total_time > 0 else 0
             coverage["performance_metrics"] = True

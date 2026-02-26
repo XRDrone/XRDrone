@@ -1,4 +1,28 @@
-# output_formatter.py
+"""
+output_formatter.py
+
+Formats merged detection results into the UDP schema expected by Unity.
+
+Converts pixel-space detections into normalized bounding box coordinates
+and maps class names to integer IDs.
+
+Each UDP packet contains:
+  - frame_id: int
+  - timestamp: float
+  - width, height: frame dimensions
+  - detections[]:
+      - id: persistent track ID
+      - cls: integer class ID (Unity mapping)
+      - conf: detection confidence
+      - cx, cy: normalized center coordinates
+      - w, h: normalized width and height
+
+Handles:
+  - confidence filtering
+  - allowed class filtering
+  - bbox normalization and clamping
+  - fallback IDs when tracking is unavailable
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
