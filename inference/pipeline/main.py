@@ -23,6 +23,7 @@ Provides:
   - run_live(): continuous live pipeline execution
   - main(): CLI entrypoint for selecting test vs live mode
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,6 +42,7 @@ import settings as S
 from merger import count_by_class, merge_detections
 from output_formatter import to_unity_udp_packet
 from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
+from pose_estimator import ArucoPoseEstimator
 from streaming import RTSPStreamer, UDPPublisher
 from tracker import OpenCVKalmanIOUTracker
 
@@ -437,15 +439,27 @@ def run_test(args) -> int:
     now = time.time()
     frame_id = 1
 
+    pose_estimator = ArucoPoseEstimator(
+        enabled=bool(getattr(S, "POSE_ENABLED_DEFAULT", True)),
+        hfov_deg=float(getattr(S, "POSE_HFOV_DEG", 84.0)),
+        marker_size_m=float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
+        marker_world_positions=getattr(S, "POSE_MARKER_WORLD_POSITIONS", {0: (0.0, 0.0, 0.0)}),
+        aruco_dict_name=str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
+    )
+    pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
+
+    infer_frame = frame.copy() if pose_draw else frame
+    pose_data = pose_estimator.estimate(frame, draw=pose_draw)
+
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
 
     people_results = people_seg_model.predict(
-        frame, conf=S.PEOPLE_CONF, classes=detect_class_ids, **pred_kw
+        infer_frame, conf=S.PEOPLE_CONF, classes=detect_class_ids, **pred_kw
     )
 
     fire_results = []
     if S.FIRE_ON_DEFAULT:
-        fire_results = fire_model.predict(frame, conf=S.FIRE_CONF, **pred_kw)
+        fire_results = fire_model.predict(infer_frame, conf=S.FIRE_CONF, **pred_kw)
 
     merged = merge_detections(
         people_results,
@@ -474,6 +488,8 @@ def run_test(args) -> int:
         allowed_classes=S.UDP_SEND_CLASSES,
         min_conf=S.UDP_MIN_CONF,
     )
+
+    pkt["pose"] = pose_data
 
     print("[UDP] JSON payload (one-line):")
     print(json.dumps(pkt))
@@ -528,13 +544,21 @@ def run_live(args) -> int:
             measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
         )
 
+    pose_estimator = ArucoPoseEstimator(
+        enabled=bool(getattr(S, "POSE_ENABLED_DEFAULT", True)),
+        hfov_deg=float(getattr(S, "POSE_HFOV_DEG", 84.0)),
+        marker_size_m=float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
+        marker_world_positions=getattr(S, "POSE_MARKER_WORLD_POSITIONS", {0: (0.0, 0.0, 0.0)}),
+        aruco_dict_name=str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
+    )
+    pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
+
     dji_overlay_on = bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT)
     dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
 
     active_camera_source = S.CAMERA_SOURCE_DEFAULT
 
     fps_hist = deque(maxlen=30)
-    inf_hist = deque(maxlen=30)
     drop_hist = deque(maxlen=30)
     t_prev = time.time()
 
@@ -569,6 +593,9 @@ def run_live(args) -> int:
 
             frame = _format_frame(frame)
 
+            infer_frame = frame.copy() if pose_draw else frame
+            pose_data = pose_estimator.estimate(frame, draw=pose_draw)
+
             wall_now = time.time()
             dt = wall_now - t_prev
             t_prev = wall_now
@@ -593,7 +620,7 @@ def run_live(args) -> int:
             if people_on:
                 if use_ultra_track:
                     people_results = people_seg_model.track(
-                        frame,
+                        infer_frame,
                         conf=S.PEOPLE_CONF,
                         classes=detect_class_ids,
                         persist=True,
@@ -602,7 +629,7 @@ def run_live(args) -> int:
                     )
                 else:
                     people_results = people_seg_model.predict(
-                        frame,
+                        infer_frame,
                         conf=S.PEOPLE_CONF,
                         classes=detect_class_ids,
                         **pred_kw,
@@ -611,14 +638,14 @@ def run_live(args) -> int:
             if fire_on:
                 if use_ultra_track:
                     fire_results = fire_model.track(
-                        frame,
+                        infer_frame,
                         conf=S.FIRE_CONF,
                         persist=True,
                         tracker=ultra_tracker_yaml,
                         **pred_kw,
                     )
                 else:
-                    fire_results = fire_model.predict(frame, conf=S.FIRE_CONF, **pred_kw)
+                    fire_results = fire_model.predict(infer_frame, conf=S.FIRE_CONF, **pred_kw)
 
             merged = merge_detections(
                 people_results,
@@ -637,7 +664,6 @@ def run_live(args) -> int:
                 if det.get("class") == "item":
                     det["class"] = "person"
 
-                # Ensure track IDs are globally unique across separate model trackers.
                 if use_ultra_track and det.get("track_id") is not None:
                     try:
                         base_id = int(det["track_id"])
@@ -648,7 +674,6 @@ def run_live(args) -> int:
                     except Exception:
                         pass
 
-            # OpenCV tracker assigns/maintains track_id across frames (in-place).
             if tracking_enabled and tracking_method == "opencv" and tracker is not None:
                 tracker.update(merged)
 
@@ -681,7 +706,6 @@ def run_live(args) -> int:
                     show_label=not want_track_overlay,
                 )
 
-            # Draw tracked boxes/IDs last so text stays readable.
             if draw_detections and want_track_overlay:
                 frame = draw_tracked_boxes(
                     frame,
@@ -693,15 +717,7 @@ def run_live(args) -> int:
                     box_thickness=2,
                 )
 
-            # Keep these computed (even without HUD) to preserve prior behavior and for debugging.
             _ = counts
-            _people_count = counts.get("person", 0) + counts.get("item", 0)
-            _fire_count = counts.get("fire", 0)
-            _smoke_count = counts.get("smoke", 0)
-            _chair_count = counts.get("chair", 0)
-            _couch_count = counts.get("couch", 0) + counts.get("sofa", 0)
-            _table_count = counts.get("dining table", 0)
-            _furniture_count = int(_chair_count + _couch_count + _table_count)
 
             net_on = _network_allowed(recording_enabled)
 
@@ -728,6 +744,7 @@ def run_live(args) -> int:
                         allowed_classes=S.UDP_SEND_CLASSES,
                         min_conf=S.UDP_MIN_CONF,
                     )
+                    pkt["pose"] = pose_data
                     try:
                         udp.send_json(pkt)
                     except Exception:

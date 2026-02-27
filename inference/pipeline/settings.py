@@ -1,21 +1,10 @@
 """
-settings.py
+XRDrone local pipeline settings.
 
-Central configuration file for the XRDrone local inference pipeline.
-
-Defines:
-  - input/output sources and resolutions
-  - YOLO model paths and thresholds
-  - UDP and RTSP network streaming parameters
-  - tracking configuration and tuning values
-  - HUD rendering and overlay behavior
-  - runtime toggles and keyboard controls
-  - logging and consent requirements
-
-Purpose:
-  - isolate runtime configuration from pipeline logic
-  - avoid hard-coded values in main.py
-  - allow quick environment and deployment changes
+This file centralizes all runtime configuration for the local YOLO
+inference demo (video source, model paths, thresholds, HUD, logging, keys,
+and network streaming).
+Edit values here; main.py should not contain hard-coded settings.
 """
 
 from __future__ import annotations
@@ -89,6 +78,10 @@ REQUIRE_CONSENT_FOR_LOG = True
 # -----------------------------
 # Models
 # -----------------------------
+# NOTE: In your repo structure:
+#   inference/models/*.pt
+#   inference/pipeline/*.py
+# So paths from pipeline/ should be ../models/<file>.pt
 PEOPLE_MODEL_PATH = "../models/yolo26n-seg.pt"
 FIRE_MODEL_PATH = "../models/fire_smoke_detection.pt"
 
@@ -142,6 +135,31 @@ TRACK_ID_OFFSET_FIRE = 1_000_000
 DRAW_TRACK_IDS = True
 
 DRAW_DETECTIONS_DEFAULT = True
+
+# -----------------------------
+# Pose estimation (camera pose via ArUco)
+# -----------------------------
+# Adds a top-level "pose" object to the UDP JSON packet.
+# If pose cannot be computed, pose_valid will be False and markers_used will be 0.
+POSE_ENABLED_DEFAULT = True
+
+# Horizontal field-of-view used to approximate intrinsics (demo-quality).
+POSE_HFOV_DEG = 84.0
+
+# Physical marker size (meters). Must match your printed ArUco markers.
+POSE_MARKER_SIZE_M = 0.1645
+
+# OpenCV ArUco dictionary name (string constant under cv2.aruco).
+POSE_ARUCO_DICT = "DICT_4X4_50"
+
+# Marker world positions in meters (origin at marker id 0 by default).
+# Each value is (x, y, z). The pose solver assumes markers lie on the Y=0 plane.
+POSE_MARKER_WORLD_POSITIONS = {
+    0: (0.0, 0.0, 0.0),
+}
+
+# If True, draw detected ArUco markers on the output frame.
+POSE_DRAW_ARUCO = False
 
 # -----------------------------
 # Mask rendering
