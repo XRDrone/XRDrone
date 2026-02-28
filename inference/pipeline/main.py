@@ -1,3 +1,4 @@
+# File: main.py
 """
 main.py
 
@@ -31,7 +32,7 @@ import json
 import time
 from collections import deque
 from types import SimpleNamespace
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import cv2
 import numpy as np
@@ -42,7 +43,7 @@ import settings as S
 from merger import count_by_class, merge_detections
 from output_formatter import to_unity_udp_packet
 from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
-from pose_estimator import ArucoPoseEstimator
+from pose_estimator import ArucoPoseEstimator, PoseSolution
 from streaming import RTSPStreamer, UDPPublisher
 from tracker import OpenCVKalmanIOUTracker
 
@@ -428,6 +429,82 @@ def _send_udp_once(udp: UDPPublisher, pkt: dict) -> None:
         pass
 
 
+def _clamp01(x: float) -> float:
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
+
+
+def _attach_foot_and_world(
+    detections: List[dict],
+    *,
+    pose_data: dict,
+    pose_solution: Optional[PoseSolution],
+    width: int,
+    height: int,
+) -> None:
+    """Attach foot_* and world_* fields to merged detections in-place.
+
+    - foot_* are normalized (0..1) image coords of the bbox bottom-center.
+    - world_* are a ray-plane (Y=0) intersection in the ArUco world frame.
+    """
+    w = max(1, int(width))
+    h = max(1, int(height))
+
+    pose_valid = bool(pose_data.get("pose_valid", False)) and pose_solution is not None
+
+    for det in detections:
+        # Defaults required by Unity schema.
+        det["foot_x"] = float(det.get("foot_x", 0.0))
+        det["foot_y"] = float(det.get("foot_y", 0.0))
+        det["world_valid"] = bool(det.get("world_valid", False))
+        det["world_x"] = float(det.get("world_x", 0.0))
+        det["world_y"] = float(det.get("world_y", 0.0))
+        det["world_z"] = float(det.get("world_z", 0.0))
+
+        bbox = det.get("bbox_xyxy")
+        if not bbox or len(bbox) != 4:
+            continue
+
+        x1, y1, x2, y2 = (float(v) for v in bbox)
+
+        foot_x_px = (x1 + x2) / 2.0
+        foot_y_px = y2
+
+        foot_x_n = _clamp01(foot_x_px / float(w))
+        foot_y_n = _clamp01(foot_y_px / float(h))
+
+        det["foot_x"] = float(foot_x_n)
+        det["foot_y"] = float(foot_y_n)
+
+        # If pose is valid, try to register the foot point onto the plane Y=0.
+        if not pose_valid:
+            det["world_valid"] = False
+            det["world_x"] = 0.0
+            det["world_y"] = 0.0
+            det["world_z"] = 0.0
+            continue
+
+        try:
+            P_w = pose_solution.intersect_plane_y0(foot_x_px, foot_y_px)
+        except Exception:
+            P_w = None
+
+        if P_w is None or getattr(P_w, "size", 0) < 3:
+            det["world_valid"] = False
+            det["world_x"] = 0.0
+            det["world_y"] = 0.0
+            det["world_z"] = 0.0
+            continue
+
+        det["world_valid"] = True
+        det["world_x"] = float(P_w[0])
+        det["world_y"] = float(P_w[1])
+        det["world_z"] = float(P_w[2])
+
+
 def run_test(args) -> int:
     people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = _build_models()
 
@@ -449,7 +526,7 @@ def run_test(args) -> int:
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
 
     infer_frame = frame.copy() if pose_draw else frame
-    pose_data = pose_estimator.estimate(frame, draw=pose_draw)
+    pose_data, pose_solution = pose_estimator.estimate_with_solution(frame, draw=pose_draw)
 
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
 
@@ -478,6 +555,14 @@ def run_test(args) -> int:
             det["class"] = "person"
 
     h, w = frame.shape[:2]
+    _attach_foot_and_world(
+        merged,
+        pose_data=pose_data,
+        pose_solution=pose_solution,
+        width=w,
+        height=h,
+    )
+
     pkt = to_unity_udp_packet(
         merged,
         frame_id=frame_id,
@@ -594,7 +679,7 @@ def run_live(args) -> int:
             frame = _format_frame(frame)
 
             infer_frame = frame.copy() if pose_draw else frame
-            pose_data = pose_estimator.estimate(frame, draw=pose_draw)
+            pose_data, pose_solution = pose_estimator.estimate_with_solution(frame, draw=pose_draw)
 
             wall_now = time.time()
             dt = wall_now - t_prev
@@ -676,6 +761,16 @@ def run_live(args) -> int:
 
             if tracking_enabled and tracking_method == "opencv" and tracker is not None:
                 tracker.update(merged)
+
+            # Attach "foot" + optional world registration fields for UDP consumers.
+            h_img, w_img = frame.shape[:2]
+            _attach_foot_and_world(
+                merged,
+                pose_data=pose_data,
+                pose_solution=pose_solution,
+                width=w_img,
+                height=h_img,
+            )
 
             counts = count_by_class(merged)
             want_track_overlay = bool(tracking_enabled and draw_track_ids)

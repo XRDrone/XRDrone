@@ -1,3 +1,4 @@
+# File: pose_estimator.py
 """
 pose_estimator.py
 
@@ -20,6 +21,9 @@ Notes
 - Requires OpenCV ArUco support (typically provided by opencv-contrib-python).
   If ArUco is unavailable, pose_valid will always be False.
 - Marker world points assume each marker lies on the world plane Y=0.
+
+This module also exposes an optional PoseSolution (K, R_wc, C_w) which can be
+used to project image pixels to the ground plane (Y=0) via ray-plane intersection.
 """
 
 from __future__ import annotations
@@ -45,10 +49,7 @@ def _as_float3(v) -> np.ndarray:
 
 
 def _hfov_camera_matrix(width: int, height: int, hfov_deg: float) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Approximate camera intrinsics from HFOV.
-    Returns (K, dist_coeffs).
-    """
+    """Approximate camera intrinsics from HFOV. Returns (K, dist_coeffs)."""
     w = max(1, int(width))
     h = max(1, int(height))
     hfov_rad = np.deg2rad(float(hfov_deg))
@@ -64,11 +65,7 @@ def _hfov_camera_matrix(width: int, height: int, hfov_deg: float) -> Tuple[np.nd
 
 
 def _marker_object_points(size_m: float) -> np.ndarray:
-    """
-    Marker corners in marker-local/world plane coordinates.
-
-    We keep Y=0 for all points, so the marker plane is world plane Y=0.
-    """
+    """Marker corners in marker-local/world plane coordinates (Y=0 plane)."""
     h = float(size_m) / 2.0
     return np.array(
         [
@@ -96,6 +93,52 @@ def _ypr_from_R_wc(R_wc: np.ndarray) -> Tuple[float, float, float]:
     pitch = float(-np.degrees(np.arcsin(np.clip(-R_cw[1, 2], -1.0, 1.0))))
     roll = float(np.degrees(np.arctan2(R_cw[1, 0], R_cw[1, 1])))
     return yaw, pitch, roll
+
+
+@dataclass(frozen=True)
+class PoseSolution:
+    """Extra per-frame camera pose data needed for 3D registration."""
+
+    C_w: np.ndarray  # (3,) camera position in world
+    R_wc: np.ndarray  # (3,3) rotation from world -> camera
+    K: np.ndarray  # (3,3) intrinsics
+
+    def pixel_ray_in_world(self, u_px: float, v_px: float) -> Optional[np.ndarray]:
+        """Back-project a pixel into a unit direction vector in world coordinates."""
+        try:
+            Kinv = np.linalg.inv(self.K)
+        except Exception:
+            return None
+
+        d_c = Kinv @ np.array([float(u_px), float(v_px), 1.0], dtype=np.float64)
+        norm = float(np.linalg.norm(d_c))
+        if norm <= 0.0:
+            return None
+        d_c = d_c / norm
+
+        # camera->world rotation is R_cw = R_wc^T
+        d_w = self.R_wc.T @ d_c
+        norm_w = float(np.linalg.norm(d_w))
+        if norm_w <= 0.0:
+            return None
+        return d_w / norm_w
+
+    def intersect_plane_y0(self, u_px: float, v_px: float, *, eps: float = 1e-8) -> Optional[np.ndarray]:
+        """Intersect pixel ray with plane Y=0; returns world point or None."""
+        d_w = self.pixel_ray_in_world(u_px, v_px)
+        if d_w is None:
+            return None
+
+        denom = float(d_w[1])
+        if abs(denom) < float(eps):
+            return None
+
+        # Ray: P(t) = C_w + t * d_w. Plane: Y=0 -> C_w.y + t*d_w.y = 0
+        t = (0.0 - float(self.C_w[1])) / denom
+        if t <= 0.0:
+            return None
+
+        return self.C_w + t * d_w
 
 
 @dataclass
@@ -173,37 +216,47 @@ class ArucoPoseEstimator:
         }
 
     def estimate(self, frame_bgr: np.ndarray, *, draw: bool = False) -> Dict[str, Any]:
+        """Backwards-compatible API: returns pose dict only."""
+        pose, _sol = self.estimate_with_solution(frame_bgr, draw=draw)
+        return pose
+
+    def estimate_with_solution(
+        self, frame_bgr: np.ndarray, *, draw: bool = False
+    ) -> Tuple[Dict[str, Any], Optional[PoseSolution]]:
         """
-        Estimate pose for the provided frame. Returns a dict matching the UDP schema.
-        If estimation fails (or is disabled), returns default_pose().
+        Estimate pose for the provided frame.
+
+        Returns:
+          (pose_dict, pose_solution)
+
+        pose_dict matches the UDP schema.
+        pose_solution is optional and contains (K, R_wc, C_w) for 3D registration.
         """
         if not self.enabled:
-            return self.default_pose()
+            return self.default_pose(), None
 
         if cv2 is None or self._aruco is None or self._dict is None:
-            return self.default_pose()
+            return self.default_pose(), None
 
         if frame_bgr is None:
-            return self.default_pose()
+            return self.default_pose(), None
 
         h, w = frame_bgr.shape[:2]
         if h <= 0 or w <= 0:
-            return self.default_pose()
+            return self.default_pose(), None
 
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
-        corners = None
-        ids = None
         try:
             if self._detector is not None:
                 corners, ids, _rej = self._detector.detectMarkers(gray)
             else:
                 corners, ids, _rej = self._aruco.detectMarkers(gray, self._dict, parameters=self._params)
         except Exception:
-            return self.default_pose()
+            return self.default_pose(), None
 
         if ids is None or len(ids) == 0:
-            return self.default_pose()
+            return self.default_pose(), None
 
         if draw:
             try:
@@ -211,9 +264,11 @@ class ArucoPoseEstimator:
             except Exception:
                 pass
 
-        pose = self._estimate_from_markers(corners, ids, width=w, height=h)
-        if pose is None:
-            return self.default_pose()
+        out = self._estimate_from_markers(corners, ids, width=w, height=h)
+        if out is None:
+            return self.default_pose(), None
+
+        pose, sol = out
 
         self._last_pose_numbers.update(
             {
@@ -225,15 +280,13 @@ class ArucoPoseEstimator:
                 "roll": float(pose["roll"]),
             }
         )
-        return pose
+
+        return pose, sol
 
     def _estimate_from_markers(
         self, corners, ids, *, width: int, height: int
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Multi-marker solvePnP pose.
-        Returns a pose dict or None.
-        """
+    ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
+        """Multi-marker solvePnP pose. Returns (pose_dict, PoseSolution) or None."""
         if cv2 is None:
             return None
 
@@ -288,12 +341,15 @@ class ArucoPoseEstimator:
         except Exception:
             return None
 
+        if C_w.size < 3:
+            C_w = np.pad(C_w, (0, 3 - C_w.size))
+
         yaw, pitch, roll = _ypr_from_R_wc(R_wc)
 
-        return {
-            "x": float(C_w[0]) if C_w.size > 0 else 0.0,
-            "altitude": float(C_w[1]) if C_w.size > 1 else 0.0,
-            "z": float(C_w[2]) if C_w.size > 2 else 0.0,
+        pose = {
+            "x": float(C_w[0]),
+            "altitude": float(C_w[1]),
+            "z": float(C_w[2]),
             "yaw": float(yaw),
             "pitch": float(pitch),
             "roll": float(roll),
@@ -301,3 +357,6 @@ class ArucoPoseEstimator:
             "markers_used": int(n_markers),
             "pose_valid": True,
         }
+
+        sol = PoseSolution(C_w=C_w.astype(np.float64), R_wc=R_wc.astype(np.float64), K=K.astype(np.float64))
+        return pose, sol

@@ -1,3 +1,4 @@
+# File: output_formatter.py
 """
 output_formatter.py
 
@@ -16,13 +17,23 @@ Each UDP packet contains:
       - conf: detection confidence
       - cx, cy: normalized center coordinates
       - w, h: normalized width and height
+      - foot_x, foot_y: normalized bottom-center point of the bbox ("foot")
+      - world_valid: bool (True if world_* are populated)
+      - world_x, world_y, world_z: world-space coords (meters) when available
 
 Handles:
   - confidence filtering
   - allowed class filtering
   - bbox normalization and clamping
   - fallback IDs when tracking is unavailable
+
+Notes
+-----
+World registration fields are pass-through:
+  - If merge-stage / pipeline code provides det["world_valid"] and world_*, they will be included.
+  - Otherwise they default to false / 0.0.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -68,14 +79,18 @@ def to_unity_udp_packet(
     min_conf: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    Convert merger.merge_detections output into the UDP schema used by test_udp.py:
+    Convert merger.merge_detections output into the UDP schema used by Unity:
       {
         "frame_id": int,
         "timestamp": float,
         "width": int,
         "height": int,
         "detections": [
-          {"id","cls","conf","cx","cy","w","h"}, ...
+          {
+            "id","cls","conf","cx","cy","w","h",
+            "foot_x","foot_y",
+            "world_valid","world_x","world_y","world_z"
+          }, ...
         ]
       }
     """
@@ -100,11 +115,24 @@ def to_unity_udp_packet(
         x1, y1, x2, y2 = (float(b) for b in bbox)
         cx, cy, w, h = _xyxy_to_xywhn(x1, y1, x2, y2, float(width), float(height))
 
+        # Default foot point is bottom-center of bbox.
+        default_foot_x = float(cx)
+        default_foot_y = float(_clamp01(cy + h / 2.0))
+
         raw_id = det.get("track_id", i)
         try:
             det_id = int(raw_id)
         except Exception:
             det_id = int(i)
+
+        world_valid = bool(det.get("world_valid", False))
+        try:
+            world_x = float(det.get("world_x", 0.0))
+            world_y = float(det.get("world_y", 0.0))
+            world_z = float(det.get("world_z", 0.0))
+        except Exception:
+            world_x, world_y, world_z = 0.0, 0.0, 0.0
+            world_valid = False
 
         dets.append(
             {
@@ -115,6 +143,12 @@ def to_unity_udp_packet(
                 "cy": float(cy),
                 "w": float(w),
                 "h": float(h),
+                "foot_x": float(det.get("foot_x", default_foot_x)),
+                "foot_y": float(det.get("foot_y", default_foot_y)),
+                "world_valid": bool(world_valid),
+                "world_x": float(world_x),
+                "world_y": float(world_y),
+                "world_z": float(world_z),
             }
         )
 
