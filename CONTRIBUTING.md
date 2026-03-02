@@ -14,6 +14,7 @@ Prerequisites:
 
 - Unity 6000.60f1 LTS 
 - Python 3.13.3   
+- python -m pip install -r requirements.txt # in inference/pipeline/requirements.txt
  
 ## Branching & Workflow
 
