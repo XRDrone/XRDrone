@@ -1,4 +1,22 @@
-# streaming.py
+"""
+streaming.py
+
+Provides network streaming utilities for the XRDrone pipeline.
+
+Includes:
+  - UDPPublisher:
+      Sends JSON detection packets to external consumers (e.g., Unity)
+      over UDP sockets.
+
+  - RTSPStreamer:
+      Pipes raw video frames into FFmpeg and publishes a live RTSP stream.
+
+Handles:
+  - socket lifecycle management
+  - JSON serialization and transmission
+  - FFmpeg process spawning and restart logic
+  - resolution changes during runtime
+"""
 from __future__ import annotations
 
 import json

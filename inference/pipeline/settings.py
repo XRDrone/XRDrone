@@ -1,4 +1,3 @@
-# settings.py
 """
 XRDrone local pipeline settings.
 
@@ -79,8 +78,12 @@ REQUIRE_CONSENT_FOR_LOG = True
 # -----------------------------
 # Models
 # -----------------------------
-PEOPLE_MODEL_PATH = "../yolo11_models/yolo11n-seg.pt"
-FIRE_MODEL_PATH = "../yolo11_models/fire_smoke_detection.pt"
+# NOTE: In your repo structure:
+#   inference/models/*.pt
+#   inference/pipeline/*.py
+# So paths from pipeline/ should be ../models/<file>.pt
+PEOPLE_MODEL_PATH = "../models/yolo26n-seg.pt"
+FIRE_MODEL_PATH = "../models/fire_smoke_detection.pt"
 
 DETECT_CLASSES = ("person", "chair", "couch", "dining table")
 
@@ -134,6 +137,31 @@ DRAW_TRACK_IDS = True
 DRAW_DETECTIONS_DEFAULT = True
 
 # -----------------------------
+# Pose estimation (camera pose via ArUco)
+# -----------------------------
+# Adds a top-level "pose" object to the UDP JSON packet.
+# If pose cannot be computed, pose_valid will be False and markers_used will be 0.
+POSE_ENABLED_DEFAULT = True
+
+# Horizontal field-of-view used to approximate intrinsics (demo-quality).
+POSE_HFOV_DEG = 84.0
+
+# Physical marker size (meters). Must match your printed ArUco markers.
+POSE_MARKER_SIZE_M = 0.1645
+
+# OpenCV ArUco dictionary name (string constant under cv2.aruco).
+POSE_ARUCO_DICT = "DICT_4X4_50"
+
+# Marker world positions in meters (origin at marker id 0 by default).
+# Each value is (x, y, z). The pose solver assumes markers lie on the Y=0 plane.
+POSE_MARKER_WORLD_POSITIONS = {
+    0: (0.0, 0.0, 0.0),
+}
+
+# If True, draw detected ArUco markers on the output frame.
+POSE_DRAW_ARUCO = False
+
+# -----------------------------
 # Mask rendering
 # -----------------------------
 MASK_ALPHA = 0.35
@@ -154,44 +182,6 @@ COLORS = {
 }
 
 # -----------------------------
-# HUD
-# -----------------------------
-HUD_ENABLED_DEFAULT = True
-
-# Choose: "dji" (new) or "classic" (old draw_hud lines panel)
-HUD_STYLE = "dji"
-
-# DJI HUD typography/styling
-HUD_TEXT_SIZE_PX = 35
-HUD_OUTLINE_PX = 2
-
-# Put Roboto-Medium.ttf next to your scripts (or change this path).
-HUD_FONT_PATHS = (
-    "Roboto-Medium.ttf",
-    "./fonts/Roboto-Medium.ttf",
-)
-
-# Emoji font fallbacks (first existing file will be used).
-# You can leave these and rely on system fonts if you prefer, but explicit TTF is most reliable.
-HUD_EMOJI_FONT_PATHS = (
-    "NotoColorEmoji.ttf",
-    "./fonts/NotoColorEmoji.ttf",
-)
-
-# DJI HUD layout (1080p tuned)
-HUD_COUNTS_POS = (35, 115)              # top-left block start
-HUD_METRICS_POS_FROM_BOTTOM = (35, 260) # (x, bottom_margin)
-HUD_TOGGLES_POS_FROM_BOTTOM = (330, 260)# (right_margin, bottom_margin)
-HUD_ROW_GAP_PX = 10
-
-# Classic HUD settings (only used when HUD_STYLE="classic")
-HUD_ANCHOR = "lb"
-HUD_MARGIN = 40
-HUD_ALPHA = 0.45
-HUD_FONT_SCALE = 0.55
-HUD_THICKNESS = 1
-
-# -----------------------------
 # DJI menu overlay (PNG on top of video)
 # -----------------------------
 DJI_MENU_OVERLAY_PATH = "DJImenu.png"
@@ -205,7 +195,6 @@ KEY_TOGGLE_RECORDING = (ord("r"), ord("R"))
 KEY_TOGGLE_PEOPLE = (ord("k"), ord("K"))
 KEY_TOGGLE_FIRE = (ord("l"), ord("L"))
 
-KEY_TOGGLE_HUD = (ord("h"), ord("H"))
 KEY_TOGGLE_INPUT = (ord("i"), ord("I"))
 KEY_TOGGLE_DRAW = (ord("v"), ord("V"))
 KEY_TOGGLE_DJI_OVERLAY = (ord("u"), ord("U"))

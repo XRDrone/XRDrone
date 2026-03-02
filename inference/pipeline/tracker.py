@@ -1,27 +1,23 @@
-"""tracker.py
+"""
+tracker.py
 
 Persistent, lightweight multi-object tracking for XRDrone.
 
-Goal
-----
-Assign stable IDs (track_id) to YOLO detections across frames so that an
-object that leaves the frame briefly (or is occluded) can keep the same
-label when it reappears.
+Assigns stable track IDs to detections across frames using:
+  - OpenCV Kalman filtering (constant velocity motion model)
+  - IoU-based data association
 
-This module implements a simple SORT-like tracker that uses:
-  - OpenCV's KalmanFilter (constant-velocity model for bbox center)
-  - IoU-based data association (per-class by default)
+Works directly with merged detection dicts from merger.py.
 
-It is intentionally dependency-light (cv2 + numpy only) and works with the
-existing "merged" detection dicts produced by merger.merge_detections().
+Capabilities:
+  - Maintains track continuity through short occlusions
+  - Optional per-class tracking isolation
+  - Configurable IoU thresholds and track lifetimes
+  - SORT-style matching and track spawning
 
-Limitations
------------
-This does *not* do appearance-based re-identification. If an object leaves
-the frame for a long time, re-enters at a different location, or there are
-multiple similar objects, IDs can switch. For stronger ReID, use a tracker
-with appearance embeddings (e.g., DeepSORT/StrongSORT) or Ultralytics
-BoT-SORT with ReID.
+Limitations:
+  - No appearance-based re-identification
+  - IDs may switch for long occlusions or similar objects
 """
 
 from __future__ import annotations

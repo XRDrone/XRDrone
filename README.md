@@ -118,13 +118,16 @@ XRDrone is not intended to provide autonomous navigation, global mapping, or per
 
 ## 📚 Citations
 
-### **Ultralytics YOLO11**
+### **Ultralytics YOLO26**
 ```
-@inproceedings{BroylesHaynerEtAl2022,
-  author = {Broyles, D.* and Hayner, C.* and Leung, K.},
-  booktitle = {{IEEE/RSJ Int.\ Conf.\ on Intelligent Robots \& Systems}},
-  title = {{WiSARD}: A Labeled Visual and Thermal Image Dataset for Wilderness Search and Rescue},
-  year = {2022},
+@software{yolo26_ultralytics,
+  author = {Glenn Jocher and Jing Qiu},
+  title = {Ultralytics YOLO26},
+  version = {26.0.0},
+  year = {2026},
+  url = {https://github.com/ultralytics/ultralytics},
+  orcid = {0000-0001-5950-6979, 0000-0003-3783-7069},
+  license = {AGPL-3.0}
 }
 ```
 
