@@ -1,4 +1,3 @@
-# File: pose_estimator.py
 """
 pose_estimator.py
 

@@ -1,4 +1,3 @@
-# File: output_formatter.py
 """
 output_formatter.py
 
