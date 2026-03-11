@@ -158,6 +158,34 @@ POSE_MARKER_WORLD_POSITIONS = {
     0: (0.0, 0.0, 0.0),
 }
 
+# Solver policy:
+#   - "auto": use single-marker when only one known marker is visible,
+#              otherwise use the multi-marker board solve.
+#   - "single_marker": always use the single-marker path.
+#   - "multi_marker_board": always try the joint multi-marker path.
+POSE_USE_CASE = "auto"  # "auto" | "single_marker" | "multi_marker_board"
+
+# Initial pose solver for one visible marker.
+POSE_SINGLE_INIT_SOLVER = "ippe_square"  # "ippe_square" | "iterative" | "ransac"
+
+# Initial pose solver when multiple fixed markers are visible together.
+POSE_MULTI_INIT_SOLVER = "ransac"  # "ransac" | "iterative" | "ippe_square"
+
+# Nonlinear refinement run after the initializer.
+POSE_REFINER = "vvs"  # "vvs" | "lm" | "none"
+POSE_ENABLE_REFINEMENT = True
+
+# Minimum known visible markers required to enter the multi-marker board path.
+POSE_MIN_MARKERS_FOR_MULTI = 2
+
+# Optional ArUco detector corner refinement.
+POSE_CORNER_REFINEMENT = "none"  # "none" | "subpix" | "contour" | "apriltag"
+
+# RANSAC tuning for the multi-marker initializer (and optional single-marker fallback).
+POSE_RANSAC_REPROJ_THRESHOLD_PX = 4.0
+POSE_RANSAC_CONFIDENCE = 0.99
+POSE_RANSAC_ITERATIONS = 100
+
 # If True, draw detected ArUco markers on the output frame.
 POSE_DRAW_ARUCO = False
 

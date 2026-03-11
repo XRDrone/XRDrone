@@ -521,6 +521,16 @@ def run_test(args) -> int:
         marker_size_m=float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
         marker_world_positions=getattr(S, "POSE_MARKER_WORLD_POSITIONS", {0: (0.0, 0.0, 0.0)}),
         aruco_dict_name=str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
+        use_case=str(getattr(S, "POSE_USE_CASE", "auto")),
+        single_init_solver=str(getattr(S, "POSE_SINGLE_INIT_SOLVER", "ippe_square")),
+        multi_init_solver=str(getattr(S, "POSE_MULTI_INIT_SOLVER", "ransac")),
+        refiner=str(getattr(S, "POSE_REFINER", "vvs")),
+        enable_refinement=bool(getattr(S, "POSE_ENABLE_REFINEMENT", True)),
+        min_markers_for_multi=int(getattr(S, "POSE_MIN_MARKERS_FOR_MULTI", 2)),
+        corner_refinement=str(getattr(S, "POSE_CORNER_REFINEMENT", "none")),
+        ransac_reproj_threshold_px=float(getattr(S, "POSE_RANSAC_REPROJ_THRESHOLD_PX", 4.0)),
+        ransac_confidence=float(getattr(S, "POSE_RANSAC_CONFIDENCE", 0.99)),
+        ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
 
@@ -634,6 +644,16 @@ def run_live(args) -> int:
         marker_size_m=float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
         marker_world_positions=getattr(S, "POSE_MARKER_WORLD_POSITIONS", {0: (0.0, 0.0, 0.0)}),
         aruco_dict_name=str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
+        use_case=str(getattr(S, "POSE_USE_CASE", "auto")),
+        single_init_solver=str(getattr(S, "POSE_SINGLE_INIT_SOLVER", "ippe_square")),
+        multi_init_solver=str(getattr(S, "POSE_MULTI_INIT_SOLVER", "ransac")),
+        refiner=str(getattr(S, "POSE_REFINER", "vvs")),
+        enable_refinement=bool(getattr(S, "POSE_ENABLE_REFINEMENT", True)),
+        min_markers_for_multi=int(getattr(S, "POSE_MIN_MARKERS_FOR_MULTI", 2)),
+        corner_refinement=str(getattr(S, "POSE_CORNER_REFINEMENT", "none")),
+        ransac_reproj_threshold_px=float(getattr(S, "POSE_RANSAC_REPROJ_THRESHOLD_PX", 4.0)),
+        ransac_confidence=float(getattr(S, "POSE_RANSAC_CONFIDENCE", 0.99)),
+        ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
 

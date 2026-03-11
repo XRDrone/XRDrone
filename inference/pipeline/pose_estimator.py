@@ -20,6 +20,7 @@ Notes
 - Requires OpenCV ArUco support (typically provided by opencv-contrib-python).
   If ArUco is unavailable, pose_valid will always be False.
 - Marker world points assume each marker lies on the world plane Y=0.
+- UDP pose output stays unchanged even when different solver/refinement paths are used.
 
 This module also exposes an optional PoseSolution (K, R_wc, C_w) which can be
 used to project image pixels to the ground plane (Y=0) via ray-plane intersection.
@@ -28,7 +29,7 @@ used to project image pixels to the ground plane (Y=0) via ray-plane intersectio
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 
@@ -36,6 +37,11 @@ try:
     import cv2
 except Exception:  # pragma: no cover
     cv2 = None  # type: ignore
+
+
+VALID_POSE_USE_CASES = {"auto", "single_marker", "multi_marker_board"}
+VALID_INIT_SOLVERS = {"iterative", "ippe_square", "ransac"}
+VALID_REFINERS = {"none", "lm", "vvs"}
 
 
 def _as_float3(v) -> np.ndarray:
@@ -94,6 +100,16 @@ def _ypr_from_R_wc(R_wc: np.ndarray) -> Tuple[float, float, float]:
     return yaw, pitch, roll
 
 
+def _polygon_area_2d(points_xy: np.ndarray) -> float:
+    """Return absolute polygon area for a 2D quadrilateral."""
+    pts = np.asarray(points_xy, dtype=np.float64).reshape(-1, 2)
+    if pts.shape[0] < 3:
+        return 0.0
+    x = pts[:, 0]
+    y = pts[:, 1]
+    return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+
+
 @dataclass(frozen=True)
 class PoseSolution:
     """Extra per-frame camera pose data needed for 3D registration."""
@@ -140,6 +156,16 @@ class PoseSolution:
         return self.C_w + t * d_w
 
 
+@dataclass(frozen=True)
+class MarkerObservation:
+    """One detected marker with known world placement."""
+
+    marker_id: int
+    object_points: np.ndarray  # (4,3)
+    image_points: np.ndarray  # (4,2)
+    image_area: float
+
+
 @dataclass
 class ArucoPoseEstimator:
     enabled: bool = True
@@ -147,12 +173,41 @@ class ArucoPoseEstimator:
     marker_size_m: float = 0.1645
     marker_world_positions: Optional[Mapping[int, Any]] = None
     aruco_dict_name: str = "DICT_4X4_50"
+    use_case: str = "auto"
+    single_init_solver: str = "ippe_square"
+    multi_init_solver: str = "ransac"
+    refiner: str = "vvs"
+    enable_refinement: bool = True
+    min_markers_for_multi: int = 2
+    corner_refinement: str = "none"
+    ransac_reproj_threshold_px: float = 4.0
+    ransac_confidence: float = 0.99
+    ransac_iterations: int = 100
 
     def __post_init__(self) -> None:
         self.enabled = bool(self.enabled)
         self.hfov_deg = float(self.hfov_deg)
         self.marker_size_m = float(self.marker_size_m)
         self.aruco_dict_name = str(self.aruco_dict_name or "DICT_4X4_50")
+        self.use_case = str(self.use_case or "auto").strip().lower()
+        self.single_init_solver = str(self.single_init_solver or "ippe_square").strip().lower()
+        self.multi_init_solver = str(self.multi_init_solver or "ransac").strip().lower()
+        self.refiner = str(self.refiner or "vvs").strip().lower()
+        self.enable_refinement = bool(self.enable_refinement)
+        self.min_markers_for_multi = max(2, int(self.min_markers_for_multi))
+        self.corner_refinement = str(self.corner_refinement or "none").strip().lower()
+        self.ransac_reproj_threshold_px = max(0.1, float(self.ransac_reproj_threshold_px))
+        self.ransac_confidence = min(max(float(self.ransac_confidence), 0.0), 1.0)
+        self.ransac_iterations = max(1, int(self.ransac_iterations))
+
+        if self.use_case not in VALID_POSE_USE_CASES:
+            self.use_case = "auto"
+        if self.single_init_solver not in VALID_INIT_SOLVERS:
+            self.single_init_solver = "ippe_square"
+        if self.multi_init_solver not in VALID_INIT_SOLVERS:
+            self.multi_init_solver = "ransac"
+        if self.refiner not in VALID_REFINERS:
+            self.refiner = "vvs"
 
         self._last_pose_numbers = {
             "x": 0.0,
@@ -188,6 +243,7 @@ class ArucoPoseEstimator:
 
         try:
             self._params = aruco.DetectorParameters()
+            self._configure_corner_refinement(self._params)
         except Exception:
             self._params = None
 
@@ -282,52 +338,275 @@ class ArucoPoseEstimator:
 
         return pose, sol
 
+    def _configure_corner_refinement(self, params) -> None:
+        """Set optional ArUco corner refinement mode when supported by OpenCV."""
+        if params is None or self._aruco is None:
+            return
+
+        mode_name = {
+            "none": "CORNER_REFINE_NONE",
+            "subpix": "CORNER_REFINE_SUBPIX",
+            "contour": "CORNER_REFINE_CONTOUR",
+            "apriltag": "CORNER_REFINE_APRILTAG",
+        }.get(self.corner_refinement, "CORNER_REFINE_NONE")
+
+        try:
+            mode_value = getattr(self._aruco, mode_name)
+        except Exception:
+            return
+
+        try:
+            params.cornerRefinementMethod = mode_value
+        except Exception:
+            return
+
     def _estimate_from_markers(
         self, corners, ids, *, width: int, height: int
     ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
-        """Multi-marker solvePnP pose. Returns (pose_dict, PoseSolution) or None."""
+        """Dispatch to the configured single- or multi-marker pose path."""
         if cv2 is None:
             return None
 
+        observations = self._collect_observations(corners, ids)
+        if not observations:
+            return None
+
+        K, dist = _hfov_camera_matrix(width, height, self.hfov_deg)
+
+        mode = self._choose_mode(len(observations))
+
+        if mode == "single_marker":
+            best = self._select_best_single_marker(observations)
+            if best is None:
+                return None
+            return self._solve_single_marker(best, K, dist)
+
+        result = self._solve_multi_marker_board(observations, K, dist)
+        if result is not None:
+            return result
+
+        if self.use_case == "auto":
+            best = self._select_best_single_marker(observations)
+            if best is not None:
+                return self._solve_single_marker(best, K, dist)
+
+        return None
+
+    def _choose_mode(self, marker_count: int) -> str:
+        """Choose which pose path to use for this frame."""
+        if marker_count <= 0:
+            return "single_marker"
+
+        if self.use_case == "single_marker":
+            return "single_marker"
+        if self.use_case == "multi_marker_board":
+            return "multi_marker_board"
+
+        if marker_count >= self.min_markers_for_multi:
+            return "multi_marker_board"
+        return "single_marker"
+
+    def _collect_observations(self, corners, ids) -> List[MarkerObservation]:
+        """Convert known detected markers into 3D/2D correspondence groups."""
         marker_world = self.marker_world_positions or {0: (0.0, 0.0, 0.0)}
         base_pts = _marker_object_points(self.marker_size_m)
-
-        obj_pts_list = []
-        img_pts_list = []
+        out: List[MarkerObservation] = []
 
         try:
             flat_ids = ids.flatten()
         except Exception:
-            return None
+            return out
 
         for i, mid in enumerate(flat_ids):
             try:
-                mid_i = int(mid)
+                marker_id = int(mid)
             except Exception:
                 continue
-            if mid_i not in marker_world:
+            if marker_id not in marker_world:
                 continue
 
-            world_offset = _as_float3(marker_world[mid_i])
-            world_pts = base_pts + world_offset  # (4,3)
-            obj_pts_list.append(world_pts)
-            img_pts_list.append(np.asarray(corners[i][0], dtype=np.float64))  # (4,2)
+            try:
+                image_pts = np.asarray(corners[i][0], dtype=np.float64).reshape(4, 2)
+            except Exception:
+                continue
 
-        n_markers = len(obj_pts_list)
-        if n_markers == 0:
+            world_offset = _as_float3(marker_world[marker_id])
+            object_pts = (base_pts + world_offset).astype(np.float64)
+            image_area = _polygon_area_2d(image_pts)
+
+            out.append(
+                MarkerObservation(
+                    marker_id=marker_id,
+                    object_points=object_pts,
+                    image_points=image_pts,
+                    image_area=image_area,
+                )
+            )
+
+        return out
+
+    def _select_best_single_marker(self, observations: List[MarkerObservation]) -> Optional[MarkerObservation]:
+        """Choose the strongest single visible marker for single-marker pose solving."""
+        if not observations:
+            return None
+        return max(observations, key=lambda obs: (float(obs.image_area), -int(obs.marker_id)))
+
+    def _solve_single_marker(
+        self, observation: MarkerObservation, K: np.ndarray, dist: np.ndarray
+    ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
+        """Solve pose from one square marker using the configured single-marker initializer."""
+        solver = self.single_init_solver
+        if solver == "ransac":
+            ok, rvec, tvec = self._solve_pnp_ransac(observation.object_points, observation.image_points, K, dist)
+        else:
+            flag_name = "SOLVEPNP_IPPE_SQUARE" if solver == "ippe_square" else "SOLVEPNP_ITERATIVE"
+            ok, rvec, tvec = self._solve_pnp(observation.object_points, observation.image_points, K, dist, flag_name)
+
+        if not ok or rvec is None or tvec is None:
+            if solver == "ippe_square":
+                ok, rvec, tvec = self._solve_pnp(
+                    observation.object_points,
+                    observation.image_points,
+                    K,
+                    dist,
+                    "SOLVEPNP_ITERATIVE",
+                )
+            if not ok or rvec is None or tvec is None:
+                return None
+
+        rvec, tvec = self._refine_pose(observation.object_points, observation.image_points, K, dist, rvec, tvec)
+        return self._build_pose_result(rvec, tvec, K, markers_used=1)
+
+    def _solve_multi_marker_board(
+        self, observations: List[MarkerObservation], K: np.ndarray, dist: np.ndarray
+    ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
+        """Solve pose from all visible markers together as one known-layout board."""
+        if len(observations) < self.min_markers_for_multi:
             return None
 
-        obj_pts = np.concatenate(obj_pts_list).astype(np.float64)
-        img_pts = np.concatenate(img_pts_list).astype(np.float64)
+        object_points = np.concatenate([obs.object_points for obs in observations], axis=0).astype(np.float64)
+        image_points = np.concatenate([obs.image_points for obs in observations], axis=0).astype(np.float64)
 
-        K, dist = _hfov_camera_matrix(width, height, self.hfov_deg)
+        solver = self.multi_init_solver
+        if solver == "ransac":
+            ok, rvec, tvec = self._solve_pnp_ransac(object_points, image_points, K, dist)
+        else:
+            flag_name = "SOLVEPNP_IPPE_SQUARE" if solver == "ippe_square" else "SOLVEPNP_ITERATIVE"
+            ok, rvec, tvec = self._solve_pnp(object_points, image_points, K, dist, flag_name)
+            if (not ok or rvec is None or tvec is None) and solver == "ippe_square":
+                ok, rvec, tvec = self._solve_pnp(object_points, image_points, K, dist, "SOLVEPNP_ITERATIVE")
+
+        if not ok or rvec is None or tvec is None:
+            return None
+
+        rvec, tvec = self._refine_pose(object_points, image_points, K, dist, rvec, tvec)
+        return self._build_pose_result(rvec, tvec, K, markers_used=len(observations))
+
+    def _solve_pnp(
+        self,
+        object_points: np.ndarray,
+        image_points: np.ndarray,
+        K: np.ndarray,
+        dist: np.ndarray,
+        flag_name: str,
+    ) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
+        """Thin wrapper around cv2.solvePnP with a named OpenCV solver flag."""
+        if cv2 is None:
+            return False, None, None
 
         try:
-            ok, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, dist, flags=cv2.SOLVEPNP_ITERATIVE)
+            flag_value = getattr(cv2, flag_name)
         except Exception:
-            return None
+            flag_value = getattr(cv2, "SOLVEPNP_ITERATIVE", None)
 
-        if not bool(ok):
+        if flag_value is None:
+            return False, None, None
+
+        try:
+            ok, rvec, tvec = cv2.solvePnP(
+                np.ascontiguousarray(object_points, dtype=np.float64),
+                np.ascontiguousarray(image_points, dtype=np.float64),
+                K,
+                dist,
+                flags=flag_value,
+            )
+        except Exception:
+            return False, None, None
+
+        return bool(ok), rvec, tvec
+
+    def _solve_pnp_ransac(
+        self,
+        object_points: np.ndarray,
+        image_points: np.ndarray,
+        K: np.ndarray,
+        dist: np.ndarray,
+    ) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
+        """Thin wrapper around cv2.solvePnPRansac for outlier-robust initialization."""
+        if cv2 is None or not hasattr(cv2, "solvePnPRansac"):
+            return False, None, None
+
+        try:
+            result = cv2.solvePnPRansac(
+                np.ascontiguousarray(object_points, dtype=np.float64),
+                np.ascontiguousarray(image_points, dtype=np.float64),
+                K,
+                dist,
+                reprojectionError=float(self.ransac_reproj_threshold_px),
+                confidence=float(self.ransac_confidence),
+                iterationsCount=int(self.ransac_iterations),
+            )
+        except Exception:
+            return False, None, None
+
+        if not isinstance(result, tuple) or len(result) < 3:
+            return False, None, None
+
+        ok, rvec, tvec = result[:3]
+        return bool(ok), rvec, tvec
+
+    def _refine_pose(
+        self,
+        object_points: np.ndarray,
+        image_points: np.ndarray,
+        K: np.ndarray,
+        dist: np.ndarray,
+        rvec: np.ndarray,
+        tvec: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Optionally refine pose while preserving the UDP output schema."""
+        if cv2 is None or not self.enable_refinement or self.refiner == "none":
+            return rvec, tvec
+
+        try:
+            if self.refiner == "lm" and hasattr(cv2, "solvePnPRefineLM"):
+                rvec, tvec = cv2.solvePnPRefineLM(
+                    np.ascontiguousarray(object_points, dtype=np.float64),
+                    np.ascontiguousarray(image_points, dtype=np.float64),
+                    K,
+                    dist,
+                    rvec,
+                    tvec,
+                )
+            elif self.refiner == "vvs" and hasattr(cv2, "solvePnPRefineVVS"):
+                rvec, tvec = cv2.solvePnPRefineVVS(
+                    np.ascontiguousarray(object_points, dtype=np.float64),
+                    np.ascontiguousarray(image_points, dtype=np.float64),
+                    K,
+                    dist,
+                    rvec,
+                    tvec,
+                )
+        except Exception:
+            return rvec, tvec
+
+        return rvec, tvec
+
+    def _build_pose_result(
+        self, rvec: np.ndarray, tvec: np.ndarray, K: np.ndarray, *, markers_used: int
+    ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
+        """Convert OpenCV pose vectors into the existing UDP pose schema."""
+        if cv2 is None:
             return None
 
         try:
@@ -353,7 +632,7 @@ class ArucoPoseEstimator:
             "pitch": float(pitch),
             "roll": float(roll),
             "hfov": float(self.hfov_deg),
-            "markers_used": int(n_markers),
+            "markers_used": int(markers_used),
             "pose_valid": True,
         }
 
