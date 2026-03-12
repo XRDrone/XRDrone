@@ -141,3 +141,128 @@ pose_valid
   Whether pose estimation succeeded this frame.
     false means the system did not compute a reliable pose (often because no markers were
     detected, or solvePnP failed).
+
+UDP Validation Tests
+====================
+
+The file `test_with_coverage.py` provides simple validation checks for the UDP packet format
+described above. Its purpose is to confirm that the pipeline produces packets that match this
+README structure and that UDP transport works as expected.
+
+File overview
+-------------
+`test_with_coverage.py` is a small validation script for the UDP packet contract.
+It is not part of the live pipeline itself. Instead, it is used to verify that the
+formatted packet and UDP send/receive behavior are correct.
+
+Command: python test_with_coverage.py
+-------------------------------------
+This runs the non-live validation checks.
+
+What it does:
+  1) Builds a sample UDP packet using the same formatter used by the pipeline.
+  2) Checks that the packet structure matches this README exactly.
+  3) Sends that packet over UDP on localhost.
+  4) Receives the same packet back.
+  5) Validates the received packet again.
+
+This confirms:
+  - the UDP packet structure is correct
+  - the formatter output matches this README
+  - UDP send/receive works on localhost
+
+Expected success output:
+  PASSED: UDP formatter structure and UDP send/receive are valid
+
+If this test fails, the issue is usually one of:
+  - missing required fields
+  - extra unexpected fields
+  - wrong field types
+  - invalid UDP loopback send/receive behavior
+
+
+Command: python test_with_coverage.py --live
+--------------------------------------------
+This runs the live UDP validation mode.
+
+What it does:
+  1) Runs the same formatter/schema checks as the default mode.
+  2) Runs the same localhost UDP loopback test as the default mode.
+  3) Opens a UDP listener on the configured port.
+  4) Waits for real packets from a running pipeline process.
+  5) Validates each live packet against this README structure.
+
+This confirms:
+  - the live pipeline is actively sending packets
+  - the packets received over UDP match this README
+  - runtime packet structure remains valid outside of the synthetic sample test
+
+Expected success output:
+  PASSED: live UDP transport and README packet structure are valid
+
+Important:
+  `--live` does not generate packets by itself. A separate pipeline process must already
+  be running and sending UDP packets to the configured host/port.
+
+Typical usage:
+  Terminal 1:
+    python main.py
+
+  Terminal 2:
+    python test_with_coverage.py --live
+
+If the live test fails with a timeout, that usually means:
+  - `main.py` is not running
+  - UDP output is disabled
+  - the test is listening on the wrong port
+  - another program is already using the port
+
+
+How the validation works
+------------------------
+The validation script checks that every UDP packet contains exactly these top-level fields:
+  - frame_id
+  - timestamp
+  - width
+  - height
+  - detections
+  - pose
+
+For each detection object, it checks:
+  - id
+  - cls
+  - conf
+  - cx
+  - cy
+  - w
+  - h
+  - foot_x
+  - foot_y
+  - world_valid
+  - world_x
+  - world_y
+  - world_z
+
+For the pose object, it checks:
+  - x
+  - altitude
+  - z
+  - yaw
+  - pitch
+  - roll
+  - hfov
+  - markers_used
+  - pose_valid
+
+The test fails if:
+  - a required field is missing
+  - an extra field is present
+  - a field has the wrong type
+  - normalized fields are outside the expected range
+
+
+Summary
+-------
+Use `python test_with_coverage.py` to verify the UDP formatter and localhost UDP transport.
+Use `python test_with_coverage.py --live` to verify packets from the real running pipeline.
+Both tests are intended to confirm that the UDP packet structure matches this README.
