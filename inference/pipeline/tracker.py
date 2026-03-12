@@ -74,6 +74,42 @@ def _iou_xyxy(a: Sequence[float], b: Sequence[float]) -> float:
     return float(inter / denom)
 
 
+def _iou_matrix_xyxy(track_bboxes: Sequence[Sequence[float]], det_bboxes: Sequence[Sequence[float]]) -> np.ndarray:
+    """Vectorized IoU matrix with the same xyxy semantics as _iou_xyxy."""
+    if not track_bboxes or not det_bboxes:
+        return np.zeros((len(track_bboxes), len(det_bboxes)), dtype=np.float32)
+
+    tracks = np.asarray(track_bboxes, dtype=np.float32)
+    dets = np.asarray(det_bboxes, dtype=np.float32)
+
+    ax1 = tracks[:, 0:1]
+    ay1 = tracks[:, 1:2]
+    ax2 = tracks[:, 2:3]
+    ay2 = tracks[:, 3:4]
+
+    bx1 = dets[None, :, 0]
+    by1 = dets[None, :, 1]
+    bx2 = dets[None, :, 2]
+    by2 = dets[None, :, 3]
+
+    ix1 = np.maximum(ax1, bx1)
+    iy1 = np.maximum(ay1, by1)
+    ix2 = np.minimum(ax2, bx2)
+    iy2 = np.minimum(ay2, by2)
+
+    iw = np.maximum(0.0, ix2 - ix1)
+    ih = np.maximum(0.0, iy2 - iy1)
+    inter = iw * ih
+
+    area_a = np.maximum(0.0, ax2 - ax1) * np.maximum(0.0, ay2 - ay1)
+    area_b = np.maximum(0.0, bx2 - bx1) * np.maximum(0.0, by2 - by1)
+    denom = area_a + area_b - inter
+
+    out = np.zeros_like(inter, dtype=np.float32)
+    np.divide(inter, denom, out=out, where=denom > 0.0)
+    return out.astype(np.float32, copy=False)
+
+
 @dataclass
 class _Track:
     track_id: int
@@ -179,42 +215,29 @@ class OpenCVKalmanIOUTracker:
         if not track_bboxes or not det_bboxes:
             return [], list(range(len(track_bboxes))), list(range(len(det_bboxes)))
 
-        iou_mat = np.zeros((len(track_bboxes), len(det_bboxes)), dtype=np.float32)
-        for i, tb in enumerate(track_bboxes):
-            for j, db in enumerate(det_bboxes):
-                iou_mat[i, j] = _iou_xyxy(tb, db)
+        iou_mat = _iou_matrix_xyxy(track_bboxes, det_bboxes)
+        work = iou_mat.copy()
 
         matches: List[Tuple[int, int]] = []
-        used_tracks = set()
-        used_dets = set()
+        used_tracks = np.zeros(len(track_bboxes), dtype=bool)
+        used_dets = np.zeros(len(det_bboxes), dtype=bool)
+        thresh = float(iou_thresh)
 
-        while True:
-            # find best remaining
-            best_val = -1.0
-            best_i = -1
-            best_j = -1
-            for i in range(iou_mat.shape[0]):
-                if i in used_tracks:
-                    continue
-                row = iou_mat[i]
-                for j in range(iou_mat.shape[1]):
-                    if j in used_dets:
-                        continue
-                    val = float(row[j])
-                    if val > best_val:
-                        best_val = val
-                        best_i = i
-                        best_j = j
-
-            if best_i < 0 or best_j < 0 or best_val < float(iou_thresh):
+        while work.size:
+            flat_idx = int(np.argmax(work))
+            best_val = float(work.reshape(-1)[flat_idx])
+            if best_val < thresh:
                 break
 
-            matches.append((best_i, best_j))
-            used_tracks.add(best_i)
-            used_dets.add(best_j)
+            best_i, best_j = np.unravel_index(flat_idx, work.shape)
+            matches.append((int(best_i), int(best_j)))
+            used_tracks[int(best_i)] = True
+            used_dets[int(best_j)] = True
+            work[int(best_i), :] = -1.0
+            work[:, int(best_j)] = -1.0
 
-        unmatched_tracks = [i for i in range(len(track_bboxes)) if i not in used_tracks]
-        unmatched_dets = [j for j in range(len(det_bboxes)) if j not in used_dets]
+        unmatched_tracks = np.flatnonzero(~used_tracks).astype(int).tolist()
+        unmatched_dets = np.flatnonzero(~used_dets).astype(int).tolist()
         return matches, unmatched_tracks, unmatched_dets
 
     def update(self, detections: List[Dict[str, Any]]) -> None:

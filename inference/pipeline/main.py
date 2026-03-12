@@ -73,9 +73,10 @@ def draw_pose_mode_status(
     bx2 = min(w_img - 1, x + tw + pad)
     by2 = min(h_img - 1, y + baseline + pad)
 
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (bx1, by1), (bx2, by2), (0, 0, 0), thickness=-1)
-    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0.0, dst=frame)
+    roi = frame[by1 : by2 + 1, bx1 : bx2 + 1]
+    if roi.size > 0:
+        black = np.zeros_like(roi)
+        cv2.addWeighted(black, 0.45, roi, 0.55, 0.0, dst=roi)
     cv2.putText(
         frame,
         text,
@@ -448,6 +449,29 @@ def _clamp01(x: float) -> float:
     return x
 
 
+def _passes_udp_world_projection_filter(
+    det: dict,
+    *,
+    allowed_classes: Optional[Sequence[str]] = None,
+    min_conf: Optional[float] = None,
+) -> bool:
+    cls_name = str(det.get("class") or det.get("class_name") or "").lower()
+    if allowed_classes is not None:
+        allow = {str(c).lower() for c in allowed_classes}
+        if cls_name not in allow:
+            return False
+
+    if min_conf is not None:
+        try:
+            conf = float(det.get("confidence", 0.0))
+        except Exception:
+            return False
+        if conf < float(min_conf):
+            return False
+
+    return True
+
+
 def _attach_foot_and_world(
     detections: List[dict],
     *,
@@ -455,6 +479,8 @@ def _attach_foot_and_world(
     pose_solution: Optional[PoseSolution],
     width: int,
     height: int,
+    projection_classes: Optional[Sequence[str]] = None,
+    projection_min_conf: Optional[float] = None,
 ) -> None:
     """Attach foot_* and world_* fields to merged detections in-place.
 
@@ -490,8 +516,14 @@ def _attach_foot_and_world(
         det["foot_x"] = float(foot_x_n)
         det["foot_y"] = float(foot_y_n)
 
+        should_project_world = _passes_udp_world_projection_filter(
+            det,
+            allowed_classes=projection_classes,
+            min_conf=projection_min_conf,
+        )
+
         # If pose is valid, try to register the foot point onto the plane Y=0.
-        if not pose_valid:
+        if not pose_valid or not should_project_world:
             det["world_valid"] = False
             det["world_x"] = 0.0
             det["world_y"] = 0.0
@@ -578,6 +610,8 @@ def run_test(args) -> int:
         pose_solution=pose_solution,
         width=w,
         height=h,
+        projection_classes=S.UDP_SEND_CLASSES,
+        projection_min_conf=S.UDP_MIN_CONF,
     )
 
     pkt = to_unity_udp_packet(
@@ -803,6 +837,8 @@ def run_live(args) -> int:
                 pose_solution=pose_solution,
                 width=w_img,
                 height=h_img,
+                projection_classes=S.UDP_SEND_CLASSES,
+                projection_min_conf=S.UDP_MIN_CONF,
             )
 
             want_track_overlay = bool(tracking_enabled and draw_track_ids)

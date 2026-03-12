@@ -117,22 +117,32 @@ class PoseSolution:
     C_w: np.ndarray  # (3,) camera position in world
     R_wc: np.ndarray  # (3,3) rotation from world -> camera
     K: np.ndarray  # (3,3) intrinsics
+    K_inv: Optional[np.ndarray] = None  # (3,3) cached intrinsics inverse
+    R_cw: Optional[np.ndarray] = None  # (3,3) rotation from camera -> world
+
+    def __post_init__(self) -> None:
+        try:
+            object.__setattr__(self, "K_inv", np.linalg.inv(np.asarray(self.K, dtype=np.float64)))
+        except Exception:
+            object.__setattr__(self, "K_inv", None)
+
+        try:
+            object.__setattr__(self, "R_cw", np.asarray(self.R_wc, dtype=np.float64).T)
+        except Exception:
+            object.__setattr__(self, "R_cw", None)
 
     def pixel_ray_in_world(self, u_px: float, v_px: float) -> Optional[np.ndarray]:
         """Back-project a pixel into a unit direction vector in world coordinates."""
-        try:
-            Kinv = np.linalg.inv(self.K)
-        except Exception:
+        if self.K_inv is None or self.R_cw is None:
             return None
 
-        d_c = Kinv @ np.array([float(u_px), float(v_px), 1.0], dtype=np.float64)
+        d_c = self.K_inv @ np.array([float(u_px), float(v_px), 1.0], dtype=np.float64)
         norm = float(np.linalg.norm(d_c))
         if norm <= 0.0:
             return None
         d_c = d_c / norm
 
-        # camera->world rotation is R_cw = R_wc^T
-        d_w = self.R_wc.T @ d_c
+        d_w = self.R_cw @ d_c
         norm_w = float(np.linalg.norm(d_w))
         if norm_w <= 0.0:
             return None
