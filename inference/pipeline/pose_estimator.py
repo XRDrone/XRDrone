@@ -40,7 +40,7 @@ except Exception:  # pragma: no cover
 
 
 VALID_POSE_USE_CASES = {"auto", "single_marker", "multi_marker_board"}
-VALID_INIT_SOLVERS = {"iterative", "ippe_square", "ransac"}
+VALID_INIT_SOLVERS = {"iterative", "ippe_square", "ransac", "sqpnp"}
 VALID_REFINERS = {"none", "lm", "vvs"}
 
 
@@ -185,7 +185,7 @@ class ArucoPoseEstimator:
     aruco_dict_name: str = "DICT_4X4_50"
     use_case: str = "auto"
     single_init_solver: str = "ippe_square"
-    multi_init_solver: str = "ransac"
+    multi_init_solver: str = "sqpnp"
     refiner: str = "vvs"
     enable_refinement: bool = True
     min_markers_for_multi: int = 2
@@ -201,7 +201,7 @@ class ArucoPoseEstimator:
         self.aruco_dict_name = str(self.aruco_dict_name or "DICT_4X4_50")
         self.use_case = str(self.use_case or "auto").strip().lower()
         self.single_init_solver = str(self.single_init_solver or "ippe_square").strip().lower()
-        self.multi_init_solver = str(self.multi_init_solver or "ransac").strip().lower()
+        self.multi_init_solver = str(self.multi_init_solver or "sqpnp").strip().lower()
         self.refiner = str(self.refiner or "vvs").strip().lower()
         self.enable_refinement = bool(self.enable_refinement)
         self.min_markers_for_multi = max(2, int(self.min_markers_for_multi))
@@ -215,7 +215,7 @@ class ArucoPoseEstimator:
         if self.single_init_solver not in VALID_INIT_SOLVERS:
             self.single_init_solver = "ippe_square"
         if self.multi_init_solver not in VALID_INIT_SOLVERS:
-            self.multi_init_solver = "ransac"
+            self.multi_init_solver = "sqpnp"
         if self.refiner not in VALID_REFINERS:
             self.refiner = "vvs"
 
@@ -540,10 +540,24 @@ class ArucoPoseEstimator:
         if solver == "ransac":
             ok, rvec, tvec = self._solve_pnp_ransac(object_points, image_points, K, dist)
         else:
-            flag_name = "SOLVEPNP_IPPE_SQUARE" if solver == "ippe_square" else "SOLVEPNP_ITERATIVE"
+            if solver == "ippe_square":
+                flag_name = "SOLVEPNP_IPPE_SQUARE"
+            elif solver == "sqpnp":
+                flag_name = "SOLVEPNP_SQPNP"
+            else:
+                flag_name = "SOLVEPNP_ITERATIVE"
+
             ok, rvec, tvec = self._solve_pnp(object_points, image_points, K, dist, flag_name)
-            if (not ok or rvec is None or tvec is None) and solver == "ippe_square":
-                ok, rvec, tvec = self._solve_pnp(object_points, image_points, K, dist, "SOLVEPNP_ITERATIVE")
+
+            if not ok or rvec is None or tvec is None:
+                if solver == "ippe_square":
+                    ok, rvec, tvec = self._solve_pnp(
+                        object_points, image_points, K, dist, "SOLVEPNP_ITERATIVE"
+                    )
+                elif solver == "sqpnp":
+                    ok, rvec, tvec = self._solve_pnp(
+                        object_points, image_points, K, dist, "SOLVEPNP_ITERATIVE"
+                    )
 
         if not ok or rvec is None or tvec is None:
             return None

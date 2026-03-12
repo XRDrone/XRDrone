@@ -43,23 +43,12 @@ UDP_PORT = 5005
 
 UNITY_CLASS_ID = {
     "person": 0,
-    "fire": 1,
-    "smoke": 2,
-    "chair": 3,
-    "couch": 4,
-    "sofa": 4,
-    "dining table": 5,
 }
 
 UDP_MIN_CONF = 0.80
 
 UDP_SEND_CLASSES = (
     "person",
-    "fire",
-    "smoke",
-    "chair",
-    "couch",
-    "dining table",
 )
 
 # -----------------------------
@@ -77,7 +66,7 @@ DETECTION_LOG_PATH = "detections_log.json"
 PEOPLE_MODEL_PATH = "../models/yolo26n-seg.pt"
 FIRE_MODEL_PATH = "../models/fire_smoke_detection.pt"
 
-DETECT_CLASSES = ("person", "chair", "couch", "dining table")
+DETECT_CLASSES = ("person",)
 
 PEOPLE_CONF = 0.40
 FIRE_CONF = 0.25
@@ -161,7 +150,7 @@ POSE_USE_CASE = "auto"  # "auto" | "single_marker" | "multi_marker_board"
 POSE_SINGLE_INIT_SOLVER = "ippe_square"  # "ippe_square" | "iterative" | "ransac"
 
 # Initial pose solver when multiple fixed markers are visible together.
-POSE_MULTI_INIT_SOLVER = "ransac"  # "ransac" | "iterative" | "ippe_square"
+POSE_MULTI_INIT_SOLVER = "sqpnp"  # "sqpnp" | "ransac" | "iterative" | "ippe_square"
 
 # Nonlinear refinement run after the initializer.
 POSE_REFINER = "vvs"  # "vvs" | "lm" | "none"
