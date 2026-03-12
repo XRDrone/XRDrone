@@ -47,6 +47,49 @@ from streaming import RTSPStreamer, UDPPublisher
 from tracker import OpenCVKalmanIOUTracker
 
 
+def draw_pose_mode_status(
+    frame: np.ndarray,
+    text: str,
+    *,
+    enabled: bool = True,
+    origin: tuple = (20, 40),
+    text_scale: float = 0.9,
+    text_thickness: int = 2,
+):
+    """Draw the current ArUco visibility/mode label on the video frame."""
+    if not enabled or frame is None or not text:
+        return frame
+
+    h_img, w_img = frame.shape[:2]
+    x, y = int(origin[0]), int(origin[1])
+    x = max(0, min(w_img - 1, x))
+    y = max(20, min(h_img - 1, y))
+
+    (tw, th), baseline = cv2.getTextSize(
+        text, cv2.FONT_HERSHEY_SIMPLEX, float(text_scale), int(text_thickness)
+    )
+    pad = 8
+    bx1 = max(0, x - pad)
+    by1 = max(0, y - th - pad)
+    bx2 = min(w_img - 1, x + tw + pad)
+    by2 = min(h_img - 1, y + baseline + pad)
+
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (bx1, by1), (bx2, by2), (0, 0, 0), thickness=-1)
+    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0.0, dst=frame)
+    cv2.putText(
+        frame,
+        text,
+        (x, y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        float(text_scale),
+        (255, 255, 255),
+        int(text_thickness),
+        cv2.LINE_AA,
+    )
+    return frame
+
+
 def _normalize_names(names):
     if isinstance(names, dict):
         return {int(k): str(v) for k, v in names.items()}
@@ -533,6 +576,7 @@ def run_test(args) -> int:
         ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
+    pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
 
     infer_frame = frame.copy() if pose_draw else frame
     pose_data, pose_solution = pose_estimator.estimate_with_solution(frame, draw=pose_draw)
@@ -603,6 +647,16 @@ def run_test(args) -> int:
         if S.DJI_MENU_OVERLAY_ENABLED_DEFAULT and dji_overlay is not None:
             frame = apply_rgba_overlay_fullframe(frame, dji_overlay)
 
+        if pose_mode_overlay_on:
+            frame = draw_pose_mode_status(
+                frame,
+                pose_estimator.get_pose_mode_overlay_text(),
+                enabled=pose_mode_overlay_on,
+                origin=getattr(S, "POSE_MODE_OVERLAY_ORIGIN", (20, 40)),
+                text_scale=float(getattr(S, "POSE_MODE_OVERLAY_TEXT_SCALE", 0.9)),
+                text_thickness=int(getattr(S, "POSE_MODE_OVERLAY_TEXT_THICKNESS", 2)),
+            )
+
         cv2.imshow(S.WINDOW_NAME, frame)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
@@ -656,6 +710,7 @@ def run_live(args) -> int:
         ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
+    pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
 
     dji_overlay_on = bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT)
     dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
@@ -838,6 +893,16 @@ def run_live(args) -> int:
             if dji_overlay_on and dji_overlay_bgra is not None:
                 frame = apply_rgba_overlay_fullframe(frame, dji_overlay_bgra)
 
+            if pose_mode_overlay_on:
+                frame = draw_pose_mode_status(
+                    frame,
+                    pose_estimator.get_pose_mode_overlay_text(),
+                    enabled=pose_mode_overlay_on,
+                    origin=getattr(S, "POSE_MODE_OVERLAY_ORIGIN", (20, 40)),
+                    text_scale=float(getattr(S, "POSE_MODE_OVERLAY_TEXT_SCALE", 0.9)),
+                    text_thickness=int(getattr(S, "POSE_MODE_OVERLAY_TEXT_THICKNESS", 2)),
+                )
+
             allow_output = (not S.REQUIRE_CONSENT_FOR_OUTPUT) or recording_enabled
             if S.SAVE_OUTPUT and allow_output:
                 if out is None:
@@ -915,6 +980,9 @@ def run_live(args) -> int:
                         )
                     else:
                         tracker.reset()
+
+            elif key in getattr(S, "KEY_TOGGLE_POSE_MODE_OVERLAY", (ord("m"), ord("M"))):
+                pose_mode_overlay_on = not pose_mode_overlay_on
 
             elif key in S.KEY_TOGGLE_INPUT and S.INPUT_MODE.lower() == "camera":
                 prev = active_camera_source

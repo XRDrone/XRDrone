@@ -217,6 +217,9 @@ class ArucoPoseEstimator:
             "pitch": 0.0,
             "roll": 0.0,
         }
+        self._last_visible_known_markers = 0
+        self._last_selected_mode = "none"
+        self._last_overlay_text = "ArUco: no known markers"
 
         self._aruco = None
         self._dict = None
@@ -275,6 +278,18 @@ class ArucoPoseEstimator:
         pose, _sol = self.estimate_with_solution(frame_bgr, draw=draw)
         return pose
 
+    def get_visible_known_marker_count(self) -> int:
+        """Return the number of known-layout ArUco markers visible in the last frame."""
+        return int(self._last_visible_known_markers)
+
+    def get_last_selected_mode(self) -> str:
+        """Return the pose path used on the last processed frame."""
+        return str(self._last_selected_mode)
+
+    def get_pose_mode_overlay_text(self) -> str:
+        """Return a user-facing label for the ArUco visibility / pose mode overlay."""
+        return str(self._last_overlay_text)
+
     def estimate_with_solution(
         self, frame_bgr: np.ndarray, *, draw: bool = False
     ) -> Tuple[Dict[str, Any], Optional[PoseSolution]]:
@@ -311,6 +326,7 @@ class ArucoPoseEstimator:
             return self.default_pose(), None
 
         if ids is None or len(ids) == 0:
+            self._update_marker_status(0, "none")
             return self.default_pose(), None
 
         if draw:
@@ -369,11 +385,13 @@ class ArucoPoseEstimator:
 
         observations = self._collect_observations(corners, ids)
         if not observations:
+            self._update_marker_status(0, "none")
             return None
 
         K, dist = _hfov_camera_matrix(width, height, self.hfov_deg)
 
         mode = self._choose_mode(len(observations))
+        self._update_marker_status(len(observations), mode)
 
         if mode == "single_marker":
             best = self._select_best_single_marker(observations)
@@ -388,9 +406,30 @@ class ArucoPoseEstimator:
         if self.use_case == "auto":
             best = self._select_best_single_marker(observations)
             if best is not None:
+                self._update_marker_status(len(observations), "single_marker")
                 return self._solve_single_marker(best, K, dist)
 
         return None
+
+    def _update_marker_status(self, marker_count: int, selected_mode: str) -> None:
+        """Track the latest visible-marker count and overlay label without changing UDP schema."""
+        count = max(0, int(marker_count))
+        mode = str(selected_mode or "none")
+
+        self._last_visible_known_markers = count
+        self._last_selected_mode = mode
+
+        if count <= 0:
+            self._last_overlay_text = "ArUco: no known markers"
+        elif count == 1:
+            self._last_overlay_text = "ArUco: single marker"
+        else:
+            self._last_overlay_text = f"ArUco: multiple markers ({count})"
+
+        if mode == "single_marker" and count > 0:
+            self._last_overlay_text += " | mode: single"
+        elif mode == "multi_marker_board" and count > 0:
+            self._last_overlay_text += " | mode: multi"
 
     def _choose_mode(self, marker_count: int) -> str:
         """Choose which pose path to use for this frame."""

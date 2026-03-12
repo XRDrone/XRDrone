@@ -13,10 +13,10 @@ import torch
 # -----------------------------
 # Input / Output
 # -----------------------------
-VIDEO_PATH = r"E:\Detection_Segmentation_Demo.mp4"
+VIDEO_PATH = "/Users/troy/Desktop/XRDrone/inference/pipeline/ArUco test.mp4"
 VIDEO_SOURCE = 0
 
-INPUT_MODE = "camera"  # "camera" | "file"
+INPUT_MODE = "file"  # "camera" | "file"
 
 CAMERA_SOURCE_DEFAULT = "webcam"  # "webcam" | "capture_card"
 WEBCAM_INDEX = 0
@@ -24,8 +24,8 @@ CAPTURE_CARD_INDEX = 1
 
 CAPTURE_BACKEND = "auto"
 
-SAVE_OUTPUT = False
-OUTPUT_VIDEO = "Segmentation_Aeroscapes.mp4"
+SAVE_OUTPUT = True
+OUTPUT_VIDEO = "/Users/troy/Desktop/XRDrone/inference/pipeline/ArUco Output.mp4"
 OUTPUT_CODEC = "mp4v"
 
 FORCE_OUTPUT_1080P = True
@@ -72,7 +72,7 @@ UDP_SEND_CLASSES = (
 # -----------------------------
 DETECTION_LOG_PATH = "detections_log.json"
 
-REQUIRE_CONSENT_FOR_OUTPUT = True
+REQUIRE_CONSENT_FOR_OUTPUT = False
 REQUIRE_CONSENT_FOR_LOG = True
 
 # -----------------------------
@@ -156,6 +156,7 @@ POSE_ARUCO_DICT = "DICT_4X4_50"
 # Each value is (x, y, z). The pose solver assumes markers lie on the Y=0 plane.
 POSE_MARKER_WORLD_POSITIONS = {
     0: (0.0, 0.0, 0.0),
+    1: (0.3, 0.0, 0.0),
 }
 
 # Solver policy:
@@ -189,6 +190,13 @@ POSE_RANSAC_ITERATIONS = 100
 # If True, draw detected ArUco markers on the output frame.
 POSE_DRAW_ARUCO = False
 
+# If True, draw a small status label showing whether the frame currently has
+# no known markers, a single marker, or multiple markers.
+POSE_MODE_OVERLAY_ENABLED_DEFAULT = True
+POSE_MODE_OVERLAY_ORIGIN = (20, 40)
+POSE_MODE_OVERLAY_TEXT_SCALE = 0.9
+POSE_MODE_OVERLAY_TEXT_THICKNESS = 2
+
 # -----------------------------
 # Mask rendering
 # -----------------------------
@@ -213,7 +221,7 @@ COLORS = {
 # DJI menu overlay (PNG on top of video)
 # -----------------------------
 DJI_MENU_OVERLAY_PATH = "DJImenu.png"
-DJI_MENU_OVERLAY_ENABLED_DEFAULT = True
+DJI_MENU_OVERLAY_ENABLED_DEFAULT = False
 
 # -----------------------------
 # Keybinds
@@ -227,6 +235,7 @@ KEY_TOGGLE_INPUT = (ord("i"), ord("I"))
 KEY_TOGGLE_DRAW = (ord("v"), ord("V"))
 KEY_TOGGLE_DJI_OVERLAY = (ord("u"), ord("U"))
 KEY_TOGGLE_TRACKING = (ord("t"), ord("T"))
+KEY_TOGGLE_POSE_MODE_OVERLAY = (ord("m"), ord("M"))
 
 # -----------------------------
 # Test mode
