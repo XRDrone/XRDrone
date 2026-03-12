@@ -16,7 +16,7 @@ import torch
 VIDEO_PATH = "/Users/troy/Desktop/XRDrone/inference/pipeline/ArUco test.mp4"
 VIDEO_SOURCE = 0
 
-INPUT_MODE = "file"  # "camera" | "file"
+INPUT_MODE = "camera"  # "camera" | "file"
 
 CAMERA_SOURCE_DEFAULT = "webcam"  # "webcam" | "capture_card"
 WEBCAM_INDEX = 0
@@ -24,7 +24,7 @@ CAPTURE_CARD_INDEX = 1
 
 CAPTURE_BACKEND = "auto"
 
-SAVE_OUTPUT = True
+SAVE_OUTPUT = False
 OUTPUT_VIDEO = "/Users/troy/Desktop/XRDrone/inference/pipeline/ArUco Output.mp4"
 OUTPUT_CODEC = "mp4v"
 
