@@ -9,14 +9,13 @@ Coordinates the full runtime loop:
   - Runs detection and optional tracking
   - Merges model outputs into a unified detection list
   - Builds UDP packets for Unity consumption
-  - Streams frames over RTSP and/or displays locally
-  - Applies overlays, HUD elements, and runtime toggles
+  - Displays locally with overlays and runtime toggles
 
 Key responsibilities:
   - Pipeline orchestration and runtime control
   - Model initialization and inference scheduling
-  - Frame processing, rendering, and networking
-  - Handling keyboard controls and user consent toggles
+  - Frame processing, rendering, and UDP publishing
+  - Handling keyboard controls and runtime toggles
 
 Provides:
   - run_test(): single-image inference and UDP preview
@@ -39,11 +38,11 @@ import torch
 from ultralytics import YOLO
 
 import settings as S
-from merger import count_by_class, merge_detections
+from merger import merge_detections
 from output_formatter import to_unity_udp_packet
 from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
 from pose_estimator import ArucoPoseEstimator, PoseSolution
-from streaming import RTSPStreamer, UDPPublisher
+from streaming import UDPPublisher
 from tracker import OpenCVKalmanIOUTracker
 
 
@@ -386,27 +385,6 @@ def draw_tracked_boxes(
     return frame
 
 
-def _attach_masks_to_merged(merged, yolo_results, source_prefix: str):
-    if not yolo_results:
-        return
-    r = yolo_results[0]
-    masks = getattr(r, "masks", None)
-    if masks is None or getattr(masks, "data", None) is None:
-        return
-
-    mask_data = masks.data.detach().cpu().numpy()  # (n, h, w)
-    idx = 0
-    for det in merged:
-        if str(det.get("source", "")).lower().startswith(source_prefix.lower()):
-            if idx < mask_data.shape[0]:
-                det["mask"] = mask_data[idx]
-            idx += 1
-
-
-def _network_allowed(recording_enabled: bool) -> bool:
-    return (not S.REQUIRE_CONSENT_FOR_NETWORK) or bool(recording_enabled)
-
-
 def _build_models():
     people_seg_model = YOLO(S.PEOPLE_MODEL_PATH)
     fire_model = YOLO(S.FIRE_MODEL_PATH)
@@ -460,15 +438,6 @@ def _parse_args():
         help="Disable OpenCV imshow window (useful for headless runs).",
     )
     return p.parse_args()
-
-
-def _send_udp_once(udp: UDPPublisher, pkt: dict) -> None:
-    msg = json.dumps(pkt)
-    print(msg)
-    try:
-        udp.send_json(pkt)
-    except Exception:
-        pass
 
 
 def _clamp01(x: float) -> float:
@@ -596,12 +565,7 @@ def run_test(args) -> int:
         fire_results,
         people_model=people_seg_label,
         fire_model=fire_label,
-        seg_on=bool(S.ATTACH_PEOPLE_MASKS_TO_LOG),
-        timestamp=now,
     )
-
-    if S.ATTACH_FIRE_MASKS_TO_LOG:
-        _attach_masks_to_merged(merged, fire_results, "fire")
 
     for det in merged:
         if det.get("class") == "item":
@@ -716,6 +680,7 @@ def run_live(args) -> int:
     dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
 
     active_camera_source = S.CAMERA_SOURCE_DEFAULT
+    fire_class_names = {str(v).lower() for v in fire_label.names.values()}
 
     fps_hist = deque(maxlen=30)
     drop_hist = deque(maxlen=30)
@@ -732,7 +697,6 @@ def run_live(args) -> int:
     window_start = time.time()
     frame_id = 0
 
-    rtsp = RTSPStreamer(S.RTSP_URL, fps=target_fps) if S.ENABLE_RTSP else None
     udp = UDPPublisher(S.UDP_IP, S.UDP_PORT) if S.ENABLE_UDP else None
 
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
@@ -811,22 +775,17 @@ def run_live(args) -> int:
                 fire_results,
                 people_model=people_seg_label,
                 fire_model=fire_label,
-                seg_on=bool(people_on and S.ATTACH_PEOPLE_MASKS_TO_LOG),
-                timestamp=now,
             )
 
-            if fire_on and S.ATTACH_FIRE_MASKS_TO_LOG:
-                _attach_masks_to_merged(merged, fire_results, "fire")
-
             for det in merged:
-                det["frame_id"] = frame_id
                 if det.get("class") == "item":
                     det["class"] = "person"
 
                 if use_ultra_track and det.get("track_id") is not None:
                     try:
                         base_id = int(det["track_id"])
-                        if str(det.get("source", "")).lower().startswith("fire"):
+                        cls_name = str(det.get("class", "")).lower()
+                        if cls_name in fire_class_names:
                             det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_FIRE", 1_000_000))
                         else:
                             det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_PEOPLE", 0))
@@ -846,7 +805,6 @@ def run_live(args) -> int:
                 height=h_img,
             )
 
-            counts = count_by_class(merged)
             want_track_overlay = bool(tracking_enabled and draw_track_ids)
 
             if draw_detections and people_on:
@@ -886,10 +844,6 @@ def run_live(args) -> int:
                     box_thickness=2,
                 )
 
-            _ = counts
-
-            net_on = _network_allowed(recording_enabled)
-
             if dji_overlay_on and dji_overlay_bgra is not None:
                 frame = apply_rgba_overlay_fullframe(frame, dji_overlay_bgra)
 
@@ -903,34 +857,29 @@ def run_live(args) -> int:
                     text_thickness=int(getattr(S, "POSE_MODE_OVERLAY_TEXT_THICKNESS", 2)),
                 )
 
-            allow_output = (not S.REQUIRE_CONSENT_FOR_OUTPUT) or recording_enabled
-            if S.SAVE_OUTPUT and allow_output:
+            if S.SAVE_OUTPUT and recording_enabled:
                 if out is None:
                     h, w = frame.shape[:2]
                     out = cv2.VideoWriter(S.OUTPUT_VIDEO, fourcc, target_fps, (w, h))
                 out.write(frame)
 
-            if net_on:
-                if udp is not None:
-                    h, w = frame.shape[:2]
-                    pkt = to_unity_udp_packet(
-                        merged,
-                        frame_id=frame_id,
-                        timestamp=now,
-                        width=w,
-                        height=h,
-                        class_map=S.UNITY_CLASS_ID,
-                        allowed_classes=S.UDP_SEND_CLASSES,
-                        min_conf=S.UDP_MIN_CONF,
-                    )
-                    pkt["pose"] = pose_data
-                    try:
-                        udp.send_json(pkt)
-                    except Exception:
-                        pass
-
-                if rtsp is not None:
-                    rtsp.write(frame)
+            if udp is not None:
+                h, w = frame.shape[:2]
+                pkt = to_unity_udp_packet(
+                    merged,
+                    frame_id=frame_id,
+                    timestamp=now,
+                    width=w,
+                    height=h,
+                    class_map=S.UNITY_CLASS_ID,
+                    allowed_classes=S.UDP_SEND_CLASSES,
+                    min_conf=S.UDP_MIN_CONF,
+                )
+                pkt["pose"] = pose_data
+                try:
+                    udp.send_json(pkt)
+                except Exception:
+                    pass
 
             if not args.no_gui:
                 cv2.imshow(S.WINDOW_NAME, frame)
@@ -943,16 +892,10 @@ def run_live(args) -> int:
 
             if key in S.KEY_TOGGLE_RECORDING:
                 if not recording_enabled:
-                    print(
-                        "[PII] USER_CONSENT: Recording ENABLED by user at",
-                        time.strftime("%Y-%m-%d %H:%M:%S"),
-                    )
+                    print("Recording ENABLED at", time.strftime("%Y-%m-%d %H:%M:%S"))
                     recording_enabled = True
                 else:
-                    print(
-                        "[PII] USER_CONSENT: Recording DISABLED at",
-                        time.strftime("%Y-%m-%d %H:%M:%S"),
-                    )
+                    print("Recording DISABLED at", time.strftime("%Y-%m-%d %H:%M:%S"))
                     recording_enabled = False
 
             elif key in S.KEY_TOGGLE_PEOPLE:
@@ -998,10 +941,6 @@ def run_live(args) -> int:
                         "camera", active_camera_source
                     )
 
-                    if rtsp is not None:
-                        rtsp.close()
-                        rtsp = RTSPStreamer(S.RTSP_URL, fps=target_fps)
-
                     fps_hist.clear()
                     drop_hist.clear()
                     t_prev = time.time()
@@ -1029,9 +968,6 @@ def run_live(args) -> int:
 
         if not args.no_gui:
             cv2.destroyAllWindows()
-
-        if rtsp is not None:
-            rtsp.close()
 
         if udp is not None:
             udp.close()

@@ -35,16 +35,11 @@ OUTPUT_KEEP_ASPECT = True
 REQUEST_CAMERA_1080P = True
 
 # -----------------------------
-# Network streaming
+# UDP output
 # -----------------------------
-ENABLE_RTSP = False
-RTSP_URL = "rtsp://127.0.0.1:8554/stream"
-
 ENABLE_UDP = True
 UDP_IP = "127.0.0.1"
 UDP_PORT = 5005
-
-REQUIRE_CONSENT_FOR_NETWORK = False
 
 UNITY_CLASS_ID = {
     "person": 0,
@@ -71,9 +66,6 @@ UDP_SEND_CLASSES = (
 # Logging
 # -----------------------------
 DETECTION_LOG_PATH = "detections_log.json"
-
-REQUIRE_CONSENT_FOR_OUTPUT = False
-REQUIRE_CONSENT_FOR_LOG = True
 
 # -----------------------------
 # Models
@@ -155,8 +147,7 @@ POSE_ARUCO_DICT = "DICT_4X4_50"
 # Marker world positions in meters (origin at marker id 0 by default).
 # Each value is (x, y, z). The pose solver assumes markers lie on the Y=0 plane.
 POSE_MARKER_WORLD_POSITIONS = {
-    0: (0.0, 0.0, 0.0),
-    1: (0.3, 0.0, 0.0),
+    0: (0.0, 0.0, 0.0)
 }
 
 # Solver policy:
@@ -203,9 +194,6 @@ POSE_MODE_OVERLAY_TEXT_THICKNESS = 2
 MASK_ALPHA = 0.35
 MASK_TEXT_SCALE = 0.6
 MASK_TEXT_THICKNESS = 2
-
-ATTACH_PEOPLE_MASKS_TO_LOG = True
-ATTACH_FIRE_MASKS_TO_LOG = True
 
 COLORS = {
     "person": (255, 255, 0),
