@@ -21,6 +21,9 @@ import numpy as np
 
 __all__ = ["load_rgba_overlay", "apply_rgba_overlay_fullframe"]
 
+_OVERLAY_CACHE = {}
+_OVERLAY_CACHE_LIMIT = 8
+
 
 def load_rgba_overlay(path: str):
     """
@@ -49,6 +52,23 @@ def load_rgba_overlay(path: str):
     return img
 
 
+def _get_cached_overlay_components(overlay_bgra, width: int, height: int):
+    """Resize/cache overlay components for a target frame size."""
+    key = (id(overlay_bgra), int(width), int(height))
+    cached = _OVERLAY_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    ov = cv2.resize(overlay_bgra, (int(width), int(height)), interpolation=cv2.INTER_LINEAR)
+    ov_bgr = ov[:, :, :3].astype(np.float32)
+    alpha = ov[:, :, 3:4].astype(np.float32) / 255.0
+
+    if len(_OVERLAY_CACHE) >= _OVERLAY_CACHE_LIMIT:
+        _OVERLAY_CACHE.clear()
+    _OVERLAY_CACHE[key] = (ov_bgr, alpha)
+    return ov_bgr, alpha
+
+
 def apply_rgba_overlay_fullframe(frame_bgr, overlay_bgra):
     """
     Alpha-blend overlay (BGRA) on top of frame (BGR).
@@ -61,14 +81,7 @@ def apply_rgba_overlay_fullframe(frame_bgr, overlay_bgra):
     if h <= 0 or w <= 0:
         return frame_bgr
 
-    # Resize overlay to match frame
-    ov = cv2.resize(overlay_bgra, (w, h), interpolation=cv2.INTER_LINEAR)
-
-    # Split channels
-    ov_bgr = ov[:, :, :3].astype(np.float32)
-    alpha = ov[:, :, 3].astype(np.float32) / 255.0  # (h,w) in [0,1]
-    alpha = alpha[:, :, None]  # (h,w,1)
-
+    ov_bgr, alpha = _get_cached_overlay_components(overlay_bgra, w, h)
     base = frame_bgr.astype(np.float32)
     out = base * (1.0 - alpha) + ov_bgr * alpha
 

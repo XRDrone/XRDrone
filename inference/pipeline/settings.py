@@ -13,7 +13,7 @@ import torch
 # -----------------------------
 # Input / Output
 # -----------------------------
-VIDEO_PATH = r"E:\Detection_Segmentation_Demo.mp4"
+VIDEO_PATH = "/Users/troy/Desktop/XRDrone/inference/pipeline/ArUco test.mp4"
 VIDEO_SOURCE = 0
 
 INPUT_MODE = "camera"  # "camera" | "file"
@@ -25,7 +25,7 @@ CAPTURE_CARD_INDEX = 1
 CAPTURE_BACKEND = "auto"
 
 SAVE_OUTPUT = False
-OUTPUT_VIDEO = "Segmentation_Aeroscapes.mp4"
+OUTPUT_VIDEO = "/Users/troy/Desktop/XRDrone/inference/pipeline/ArUco Output.mp4"
 OUTPUT_CODEC = "mp4v"
 
 FORCE_OUTPUT_1080P = True
@@ -35,45 +35,26 @@ OUTPUT_KEEP_ASPECT = True
 REQUEST_CAMERA_1080P = True
 
 # -----------------------------
-# Network streaming
+# UDP output
 # -----------------------------
-ENABLE_RTSP = False
-RTSP_URL = "rtsp://127.0.0.1:8554/stream"
-
 ENABLE_UDP = True
 UDP_IP = "127.0.0.1"
 UDP_PORT = 5005
 
-REQUIRE_CONSENT_FOR_NETWORK = False
-
 UNITY_CLASS_ID = {
     "person": 0,
-    "fire": 1,
-    "smoke": 2,
-    "chair": 3,
-    "couch": 4,
-    "sofa": 4,
-    "dining table": 5,
 }
 
 UDP_MIN_CONF = 0.80
 
 UDP_SEND_CLASSES = (
     "person",
-    "fire",
-    "smoke",
-    "chair",
-    "couch",
-    "dining table",
 )
 
 # -----------------------------
 # Logging
 # -----------------------------
 DETECTION_LOG_PATH = "detections_log.json"
-
-REQUIRE_CONSENT_FOR_OUTPUT = True
-REQUIRE_CONSENT_FOR_LOG = True
 
 # -----------------------------
 # Models
@@ -85,7 +66,7 @@ REQUIRE_CONSENT_FOR_LOG = True
 PEOPLE_MODEL_PATH = "../models/yolo26n-seg.pt"
 FIRE_MODEL_PATH = "../models/fire_smoke_detection.pt"
 
-DETECT_CLASSES = ("person", "chair", "couch", "dining table")
+DETECT_CLASSES = ("person",)
 
 PEOPLE_CONF = 0.40
 FIRE_CONF = 0.25
@@ -97,6 +78,15 @@ IMGSZ = 960
 # -----------------------------
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 USE_FP16 = bool(torch.cuda.is_available())
+
+# -----------------------------
+# Serialization / transport
+# -----------------------------
+# Keep the UDP JSON schema identical, but allow a faster encoder path.
+# "orjson" -> use orjson when installed, with stdlib compact JSON fallback.
+# "json"   -> always use stdlib compact JSON.
+JSON_SERIALIZER = "orjson"  # "orjson" | "json"
+JSON_ENSURE_ASCII = False
 
 DEFAULT_FPS = 30.0
 WINDOW_NAME = "Live Pipeline"
@@ -114,18 +104,28 @@ TRACKING_ENABLED_DEFAULT = True
 # Choose tracker backend:
 #  - "opencv": lightweight Kalman+IoU tracker in tracker.py
 #  - "ultralytics": Ultralytics built-in trackers (BoT-SORT/ByteTrack)
-TRACKING_METHOD = "opencv"  # "opencv" | "ultralytics"
+TRACKING_METHOD = "ultralytics"  # "opencv" | "ultralytics"
 
 # OpenCV tracker tuning
 TRACK_MIN_IOU = 0.30
-TRACK_MAX_AGE_FRAMES = 90  # how long an object can be missing and still keep its ID
+TRACK_MAX_AGE_FRAMES = 120  # how long an object can be missing and still keep its ID
 TRACK_PER_CLASS = True
 TRACK_KF_PROCESS_NOISE = 1e-2
 TRACK_KF_MEAS_NOISE = 1e-1
 
+# Matching backend for the OpenCV tracker.
+TRACK_MATCHING_METHOD = "hungarian"  # "hungarian" | "greedy"
+TRACK_MIN_MATCH_SCORE = 0.45
+TRACK_MAX_FOOT_DISTANCE_NORM = 0.08
+TRACK_MAX_WORLD_DISTANCE_M = 2.5
+TRACK_USE_WORLD_POSITION = True
+TRACK_WORLD_SCORE_WEIGHT = 0.65
+TRACK_IOU_SCORE_WEIGHT = 0.25
+TRACK_FOOT_SCORE_WEIGHT = 0.10
+
 # Ultralytics tracker config (only used when TRACKING_METHOD="ultralytics")
 # Ultralytics supports "botsort.yaml" (default) and "bytetrack.yaml".
-ULTRALYTICS_TRACKER = "bytetrack.yaml"
+ULTRALYTICS_TRACKER = "botsort_drone.yaml"
 
 # If you use separate trackers per model (people vs fire), offsets prevent ID collisions.
 TRACK_ID_OFFSET_PEOPLE = 0
@@ -155,11 +155,46 @@ POSE_ARUCO_DICT = "DICT_4X4_50"
 # Marker world positions in meters (origin at marker id 0 by default).
 # Each value is (x, y, z). The pose solver assumes markers lie on the Y=0 plane.
 POSE_MARKER_WORLD_POSITIONS = {
-    0: (0.0, 0.0, 0.0),
+    0: (0.0, 0.0, 0.0)
 }
+
+# Solver policy:
+#   - "auto": use single-marker when only one known marker is visible,
+#              otherwise use the multi-marker board solve.
+#   - "single_marker": always use the single-marker path.
+#   - "multi_marker_board": always try the joint multi-marker path.
+POSE_USE_CASE = "auto"  # "auto" | "single_marker" | "multi_marker_board"
+
+# Initial pose solver for one visible marker.
+POSE_SINGLE_INIT_SOLVER = "ippe_square"  # "ippe_square" | "iterative" | "ransac"
+
+# Initial pose solver when multiple fixed markers are visible together.
+POSE_MULTI_INIT_SOLVER = "sqpnp"  # "sqpnp" | "ransac" | "iterative" | "ippe_square"
+
+# Nonlinear refinement run after the initializer.
+POSE_REFINER = "vvs"  # "vvs" | "lm" | "none"
+POSE_ENABLE_REFINEMENT = True
+
+# Minimum known visible markers required to enter the multi-marker board path.
+POSE_MIN_MARKERS_FOR_MULTI = 2
+
+# Optional ArUco detector corner refinement.
+POSE_CORNER_REFINEMENT = "none"  # "none" | "subpix" | "contour" | "apriltag"
+
+# RANSAC tuning for the multi-marker initializer (and optional single-marker fallback).
+POSE_RANSAC_REPROJ_THRESHOLD_PX = 4.0
+POSE_RANSAC_CONFIDENCE = 0.99
+POSE_RANSAC_ITERATIONS = 100
 
 # If True, draw detected ArUco markers on the output frame.
 POSE_DRAW_ARUCO = False
+
+# If True, draw a small status label showing whether the frame currently has
+# no known markers, a single marker, or multiple markers.
+POSE_MODE_OVERLAY_ENABLED_DEFAULT = True
+POSE_MODE_OVERLAY_ORIGIN = (20, 40)
+POSE_MODE_OVERLAY_TEXT_SCALE = 0.9
+POSE_MODE_OVERLAY_TEXT_THICKNESS = 2
 
 # -----------------------------
 # Mask rendering
@@ -167,9 +202,6 @@ POSE_DRAW_ARUCO = False
 MASK_ALPHA = 0.35
 MASK_TEXT_SCALE = 0.6
 MASK_TEXT_THICKNESS = 2
-
-ATTACH_PEOPLE_MASKS_TO_LOG = True
-ATTACH_FIRE_MASKS_TO_LOG = True
 
 COLORS = {
     "person": (255, 255, 0),
@@ -185,7 +217,7 @@ COLORS = {
 # DJI menu overlay (PNG on top of video)
 # -----------------------------
 DJI_MENU_OVERLAY_PATH = "DJImenu.png"
-DJI_MENU_OVERLAY_ENABLED_DEFAULT = True
+DJI_MENU_OVERLAY_ENABLED_DEFAULT = False
 
 # -----------------------------
 # Keybinds
@@ -199,6 +231,7 @@ KEY_TOGGLE_INPUT = (ord("i"), ord("I"))
 KEY_TOGGLE_DRAW = (ord("v"), ord("V"))
 KEY_TOGGLE_DJI_OVERLAY = (ord("u"), ord("U"))
 KEY_TOGGLE_TRACKING = (ord("t"), ord("T"))
+KEY_TOGGLE_POSE_MODE_OVERLAY = (ord("m"), ord("M"))
 
 # -----------------------------
 # Test mode

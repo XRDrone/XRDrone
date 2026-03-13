@@ -5,19 +5,22 @@ Persistent, lightweight multi-object tracking for XRDrone.
 
 Assigns stable track IDs to detections across frames using:
   - OpenCV Kalman filtering (constant velocity motion model)
-  - IoU-based data association
+  - Composite data association that can fuse:
+      - bbox IoU
+      - normalized foot-point distance
+      - ground-plane distance when world registration is available
 
 Works directly with merged detection dicts from merger.py.
 
 Capabilities:
   - Maintains track continuity through short occlusions
   - Optional per-class tracking isolation
-  - Configurable IoU thresholds and track lifetimes
-  - SORT-style matching and track spawning
+  - Configurable track lifetimes and matching thresholds
+  - SORT-style motion prediction with stronger drone-aware matching
 
 Limitations:
-  - No appearance-based re-identification
-  - IDs may switch for long occlusions or similar objects
+  - No learned appearance-based re-identification
+  - Long disappear/reappear events can still receive new IDs
 """
 
 from __future__ import annotations
@@ -27,6 +30,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
+
+try:
+    from scipy.optimize import linear_sum_assignment
+except Exception:  # pragma: no cover
+    linear_sum_assignment = None  # type: ignore
 
 
 def _xyxy_to_cxcywh(bbox_xyxy: Sequence[float]) -> Tuple[float, float, float, float]:
@@ -48,30 +56,49 @@ def _cxcywh_to_xyxy(cx: float, cy: float, w: float, h: float) -> List[float]:
     return [x1, y1, x2, y2]
 
 
-def _iou_xyxy(a: Sequence[float], b: Sequence[float]) -> float:
-    ax1, ay1, ax2, ay2 = (float(v) for v in a)
-    bx1, by1, bx2, by2 = (float(v) for v in b)
+def _iou_matrix_xyxy(track_bboxes: Sequence[Sequence[float]], det_bboxes: Sequence[Sequence[float]]) -> np.ndarray:
+    """Vectorized IoU matrix with xyxy semantics."""
+    if not track_bboxes or not det_bboxes:
+        return np.zeros((len(track_bboxes), len(det_bboxes)), dtype=np.float32)
 
-    ix1 = max(ax1, bx1)
-    iy1 = max(ay1, by1)
-    ix2 = min(ax2, bx2)
-    iy2 = min(ay2, by2)
+    tracks = np.asarray(track_bboxes, dtype=np.float32)
+    dets = np.asarray(det_bboxes, dtype=np.float32)
 
-    iw = max(0.0, ix2 - ix1)
-    ih = max(0.0, iy2 - iy1)
+    ax1 = tracks[:, 0:1]
+    ay1 = tracks[:, 1:2]
+    ax2 = tracks[:, 2:3]
+    ay2 = tracks[:, 3:4]
+
+    bx1 = dets[None, :, 0]
+    by1 = dets[None, :, 1]
+    bx2 = dets[None, :, 2]
+    by2 = dets[None, :, 3]
+
+    ix1 = np.maximum(ax1, bx1)
+    iy1 = np.maximum(ay1, by1)
+    ix2 = np.minimum(ax2, bx2)
+    iy2 = np.minimum(ay2, by2)
+
+    iw = np.maximum(0.0, ix2 - ix1)
+    ih = np.maximum(0.0, iy2 - iy1)
     inter = iw * ih
 
-    aw = max(0.0, ax2 - ax1)
-    ah = max(0.0, ay2 - ay1)
-    bw = max(0.0, bx2 - bx1)
-    bh = max(0.0, by2 - by1)
-    area_a = aw * ah
-    area_b = bw * bh
-
+    area_a = np.maximum(0.0, ax2 - ax1) * np.maximum(0.0, ay2 - ay1)
+    area_b = np.maximum(0.0, bx2 - bx1) * np.maximum(0.0, by2 - by1)
     denom = area_a + area_b - inter
-    if denom <= 0.0:
-        return 0.0
-    return float(inter / denom)
+
+    out = np.zeros_like(inter, dtype=np.float32)
+    np.divide(inter, denom, out=out, where=denom > 0.0)
+    return out.astype(np.float32, copy=False)
+
+
+def _as_optional_float(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
 
 
 @dataclass
@@ -86,10 +113,15 @@ class _Track:
     age: int = 1
     lost: int = 0
     kf: Optional[cv2.KalmanFilter] = None
+    foot_x: Optional[float] = None
+    foot_y: Optional[float] = None
+    world_valid: bool = False
+    world_x: float = 0.0
+    world_z: float = 0.0
 
 
 class OpenCVKalmanIOUTracker:
-    """SORT-like tracker using OpenCV KalmanFilter + IoU assignment."""
+    """SORT-like tracker with drone-aware association."""
 
     def __init__(
         self,
@@ -100,6 +132,14 @@ class OpenCVKalmanIOUTracker:
         dt: float = 1.0,
         process_noise: float = 1e-2,
         measurement_noise: float = 1e-1,
+        matching_method: str = "greedy",
+        min_match_score: float = 0.45,
+        max_foot_distance_norm: float = 0.08,
+        max_world_distance_m: float = 2.5,
+        use_world_position: bool = True,
+        world_score_weight: float = 0.65,
+        iou_score_weight: float = 0.25,
+        foot_score_weight: float = 0.10,
     ) -> None:
         self.min_iou = float(min_iou)
         self.max_age = int(max_age_frames)
@@ -107,6 +147,15 @@ class OpenCVKalmanIOUTracker:
         self.dt = float(dt)
         self.process_noise = float(process_noise)
         self.measurement_noise = float(measurement_noise)
+        self.matching_method = str(matching_method or "greedy").strip().lower()
+
+        self.min_match_score = float(min_match_score)
+        self.max_foot_distance_norm = max(1e-6, float(max_foot_distance_norm))
+        self.max_world_distance_m = max(1e-6, float(max_world_distance_m))
+        self.use_world_position = bool(use_world_position)
+        self.world_score_weight = max(0.0, float(world_score_weight))
+        self.iou_score_weight = max(0.0, float(iou_score_weight))
+        self.foot_score_weight = max(0.0, float(foot_score_weight))
 
         self._next_id = 1
         self._tracks: List[_Track] = []
@@ -149,6 +198,17 @@ class OpenCVKalmanIOUTracker:
         meas = np.array([[cx], [cy]], dtype=np.float32)
         tr.kf.correct(meas)
 
+    def _update_track_spatial_memory(self, tr: _Track, det: Dict[str, Any]) -> None:
+        tr.foot_x = _as_optional_float(det.get("foot_x"))
+        tr.foot_y = _as_optional_float(det.get("foot_y"))
+        tr.world_valid = bool(det.get("world_valid", False))
+        if tr.world_valid:
+            tr.world_x = float(det.get("world_x", 0.0))
+            tr.world_z = float(det.get("world_z", 0.0))
+        else:
+            tr.world_x = 0.0
+            tr.world_z = 0.0
+
     def _spawn_track(self, det: Dict[str, Any]) -> _Track:
         bbox = det.get("bbox_xyxy")
         if not bbox or len(bbox) != 4:
@@ -166,55 +226,162 @@ class OpenCVKalmanIOUTracker:
             lost=0,
             kf=self._new_kf(cx, cy),
         )
+        self._update_track_spatial_memory(tr, det)
         self._next_id += 1
         return tr
 
-    def _greedy_match(
+    def _foot_similarity(self, tr: _Track, det: Dict[str, Any]) -> float:
+        if tr.foot_x is None or tr.foot_y is None:
+            return 0.0
+        det_fx = _as_optional_float(det.get("foot_x"))
+        det_fy = _as_optional_float(det.get("foot_y"))
+        if det_fx is None or det_fy is None:
+            return 0.0
+        dist = float(np.hypot(det_fx - tr.foot_x, det_fy - tr.foot_y))
+        if dist > self.max_foot_distance_norm:
+            return 0.0
+        return max(0.0, 1.0 - dist / self.max_foot_distance_norm)
+
+    def _world_similarity(self, tr: _Track, det: Dict[str, Any]) -> float:
+        if not self.use_world_position or not tr.world_valid or not bool(det.get("world_valid", False)):
+            return 0.0
+        try:
+            det_wx = float(det.get("world_x", 0.0))
+            det_wz = float(det.get("world_z", 0.0))
+        except Exception:
+            return 0.0
+        dist = float(np.hypot(det_wx - tr.world_x, det_wz - tr.world_z))
+        if dist > self.max_world_distance_m:
+            return 0.0
+        return max(0.0, 1.0 - dist / self.max_world_distance_m)
+
+    def _build_score_matrix(
         self,
-        track_bboxes: List[List[float]],
-        det_bboxes: List[List[float]],
-        iou_thresh: float,
-    ) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
-        """Return matches + unmatched indices using greedy max-IoU."""
-        if not track_bboxes or not det_bboxes:
-            return [], list(range(len(track_bboxes))), list(range(len(det_bboxes)))
+        track_ids: List[int],
+        det_ids: List[int],
+        detections: List[Dict[str, Any]],
+    ) -> np.ndarray:
+        if not track_ids or not det_ids:
+            return np.zeros((len(track_ids), len(det_ids)), dtype=np.float32)
 
-        iou_mat = np.zeros((len(track_bboxes), len(det_bboxes)), dtype=np.float32)
-        for i, tb in enumerate(track_bboxes):
-            for j, db in enumerate(det_bboxes):
-                iou_mat[i, j] = _iou_xyxy(tb, db)
+        track_bboxes = [self._tracks[ti].bbox_xyxy for ti in track_ids]
+        det_bboxes: List[List[float]] = []
+        for di in det_ids:
+            bb = detections[di].get("bbox_xyxy")
+            if not bb or len(bb) != 4:
+                bb = [0.0, 0.0, 0.0, 0.0]
+            det_bboxes.append(list(map(float, bb)))
 
-        matches: List[Tuple[int, int]] = []
-        used_tracks = set()
-        used_dets = set()
+        iou_mat = _iou_matrix_xyxy(track_bboxes, det_bboxes)
+        score_mat = np.zeros_like(iou_mat, dtype=np.float32)
 
-        while True:
-            # find best remaining
-            best_val = -1.0
-            best_i = -1
-            best_j = -1
-            for i in range(iou_mat.shape[0]):
-                if i in used_tracks:
-                    continue
-                row = iou_mat[i]
-                for j in range(iou_mat.shape[1]):
-                    if j in used_dets:
+        for local_ti, ti in enumerate(track_ids):
+            tr = self._tracks[ti]
+            for local_di, di in enumerate(det_ids):
+                det = detections[di]
+                iou = float(iou_mat[local_ti, local_di])
+                foot_sim = self._foot_similarity(tr, det)
+                world_sim = self._world_similarity(tr, det)
+
+                use_world_pair = self.use_world_position and tr.world_valid and bool(det.get("world_valid", False))
+                use_foot_pair = foot_sim > 0.0
+
+                if use_world_pair:
+                    # World-space association is the primary drone-specific cue; IoU/foot act as tie-breakers.
+                    numer = self.world_score_weight * world_sim
+                    denom = self.world_score_weight
+
+                    if self.iou_score_weight > 0.0:
+                        numer += self.iou_score_weight * iou
+                        denom += self.iou_score_weight
+                    if use_foot_pair and self.foot_score_weight > 0.0:
+                        numer += self.foot_score_weight * foot_sim
+                        denom += self.foot_score_weight
+
+                    score = numer / denom if denom > 0.0 else 0.0
+                    if world_sim <= 0.0:
+                        score = 0.0
+                else:
+                    # Fallback when world registration is unavailable: require either enough IoU or a close foot point.
+                    if iou < self.min_iou and not use_foot_pair:
+                        score_mat[local_ti, local_di] = 0.0
                         continue
-                    val = float(row[j])
-                    if val > best_val:
-                        best_val = val
-                        best_i = i
-                        best_j = j
 
-            if best_i < 0 or best_j < 0 or best_val < float(iou_thresh):
+                    numer = 0.0
+                    denom = 0.0
+                    if self.iou_score_weight > 0.0:
+                        numer += self.iou_score_weight * iou
+                        denom += self.iou_score_weight
+                    if use_foot_pair and self.foot_score_weight > 0.0:
+                        numer += self.foot_score_weight * foot_sim
+                        denom += self.foot_score_weight
+                    score = numer / denom if denom > 0.0 else 0.0
+
+                score_mat[local_ti, local_di] = float(max(0.0, min(1.0, score)))
+
+        return score_mat
+
+    def _greedy_score_match(
+        self,
+        score_mat: np.ndarray,
+        min_score: float,
+    ) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
+        n_tracks, n_dets = score_mat.shape
+        if n_tracks == 0 or n_dets == 0:
+            return [], list(range(n_tracks)), list(range(n_dets))
+
+        work = score_mat.copy()
+        matches: List[Tuple[int, int]] = []
+        used_tracks = np.zeros(n_tracks, dtype=bool)
+        used_dets = np.zeros(n_dets, dtype=bool)
+        thresh = float(min_score)
+
+        while work.size:
+            flat_idx = int(np.argmax(work))
+            best_val = float(work.reshape(-1)[flat_idx])
+            if best_val < thresh:
                 break
 
-            matches.append((best_i, best_j))
-            used_tracks.add(best_i)
-            used_dets.add(best_j)
+            best_i, best_j = np.unravel_index(flat_idx, work.shape)
+            matches.append((int(best_i), int(best_j)))
+            used_tracks[int(best_i)] = True
+            used_dets[int(best_j)] = True
+            work[int(best_i), :] = -1.0
+            work[:, int(best_j)] = -1.0
 
-        unmatched_tracks = [i for i in range(len(track_bboxes)) if i not in used_tracks]
-        unmatched_dets = [j for j in range(len(det_bboxes)) if j not in used_dets]
+        unmatched_tracks = np.flatnonzero(~used_tracks).astype(int).tolist()
+        unmatched_dets = np.flatnonzero(~used_dets).astype(int).tolist()
+        return matches, unmatched_tracks, unmatched_dets
+
+    def _hungarian_score_match(
+        self,
+        score_mat: np.ndarray,
+        min_score: float,
+    ) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
+        n_tracks, n_dets = score_mat.shape
+        if n_tracks == 0 or n_dets == 0:
+            return [], list(range(n_tracks)), list(range(n_dets))
+
+        if linear_sum_assignment is None:
+            return self._greedy_score_match(score_mat, min_score)
+
+        thresh = float(min_score)
+        cost = np.where(score_mat >= thresh, 1.0 - score_mat, 1e6).astype(np.float32, copy=False)
+        row_ind, col_ind = linear_sum_assignment(cost)
+
+        matches: List[Tuple[int, int]] = []
+        used_tracks = np.zeros(n_tracks, dtype=bool)
+        used_dets = np.zeros(n_dets, dtype=bool)
+
+        for ti, di in zip(row_ind.tolist(), col_ind.tolist()):
+            if float(score_mat[ti, di]) < thresh:
+                continue
+            matches.append((int(ti), int(di)))
+            used_tracks[int(ti)] = True
+            used_dets[int(di)] = True
+
+        unmatched_tracks = np.flatnonzero(~used_tracks).astype(int).tolist()
+        unmatched_dets = np.flatnonzero(~used_dets).astype(int).tolist()
         return matches, unmatched_tracks, unmatched_dets
 
     def update(self, detections: List[Dict[str, Any]]) -> None:
@@ -242,14 +409,12 @@ class OpenCVKalmanIOUTracker:
         matched_track_ids: set[int] = set()
 
         for g_name, det_ids in groups.items():
-            # eligible tracks
             if self.per_class and g_name != "__all__":
                 track_ids = [i for i, tr in enumerate(self._tracks) if tr.cls_name == g_name]
             else:
                 track_ids = list(range(len(self._tracks)))
 
             if not track_ids and det_ids:
-                # spawn all as new tracks
                 for di in det_ids:
                     tr = self._spawn_track(detections[di])
                     self._tracks.append(tr)
@@ -260,37 +425,35 @@ class OpenCVKalmanIOUTracker:
             if not det_ids:
                 continue
 
-            track_bboxes = [self._tracks[ti].bbox_xyxy for ti in track_ids]
-            det_bboxes: List[List[float]] = []
-            for di in det_ids:
-                bb = detections[di].get("bbox_xyxy")
-                if not bb or len(bb) != 4:
-                    bb = [0.0, 0.0, 0.0, 0.0]
-                det_bboxes.append(list(map(float, bb)))
+            score_mat = self._build_score_matrix(track_ids, det_ids, detections)
+            if self.matching_method == "hungarian":
+                matches, _, un_det = self._hungarian_score_match(score_mat, self.min_match_score)
+            else:
+                matches, _, un_det = self._greedy_score_match(score_mat, self.min_match_score)
 
-            matches, _, un_det = self._greedy_match(track_bboxes, det_bboxes, self.min_iou)
-
-            # apply matches
             for local_ti, local_di in matches:
                 ti = track_ids[local_ti]
                 di = det_ids[local_di]
                 tr = self._tracks[ti]
 
-                bbox = det_bboxes[local_di]
+                bbox = detections[di].get("bbox_xyxy")
+                if not bbox or len(bbox) != 4:
+                    bbox = [0.0, 0.0, 0.0, 0.0]
+                bbox = list(map(float, bbox))
                 cx, cy, w, h = _xyxy_to_cxcywh(bbox)
 
                 self._correct_track(tr, cx, cy)
-                tr.bbox_xyxy = list(map(float, bbox))
+                tr.bbox_xyxy = bbox
                 tr.w = float(w)
                 tr.h = float(h)
                 tr.conf = float(detections[di].get("confidence", tr.conf))
                 tr.hits += 1
                 tr.lost = 0
+                self._update_track_spatial_memory(tr, detections[di])
 
                 detections[di]["track_id"] = int(tr.track_id)
                 matched_track_ids.add(ti)
 
-            # spawn tracks for unmatched detections
             for local_di in un_det:
                 di = det_ids[local_di]
                 tr = self._spawn_track(detections[di])

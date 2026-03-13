@@ -9,14 +9,13 @@ Coordinates the full runtime loop:
   - Runs detection and optional tracking
   - Merges model outputs into a unified detection list
   - Builds UDP packets for Unity consumption
-  - Streams frames over RTSP and/or displays locally
-  - Applies overlays, HUD elements, and runtime toggles
+  - Displays locally with overlays and runtime toggles
 
 Key responsibilities:
   - Pipeline orchestration and runtime control
   - Model initialization and inference scheduling
-  - Frame processing, rendering, and networking
-  - Handling keyboard controls and user consent toggles
+  - Frame processing, rendering, and UDP publishing
+  - Handling keyboard controls and runtime toggles
 
 Provides:
   - run_test(): single-image inference and UDP preview
@@ -39,12 +38,56 @@ import torch
 from ultralytics import YOLO
 
 import settings as S
-from merger import count_by_class, merge_detections
+from merger import merge_detections
 from output_formatter import to_unity_udp_packet
 from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
 from pose_estimator import ArucoPoseEstimator, PoseSolution
-from streaming import RTSPStreamer, UDPPublisher
+from streaming import UDPPublisher
 from tracker import OpenCVKalmanIOUTracker
+
+
+def draw_pose_mode_status(
+    frame: np.ndarray,
+    text: str,
+    *,
+    enabled: bool = True,
+    origin: tuple = (20, 40),
+    text_scale: float = 0.9,
+    text_thickness: int = 2,
+):
+    """Draw the current ArUco visibility/mode label on the video frame."""
+    if not enabled or frame is None or not text:
+        return frame
+
+    h_img, w_img = frame.shape[:2]
+    x, y = int(origin[0]), int(origin[1])
+    x = max(0, min(w_img - 1, x))
+    y = max(20, min(h_img - 1, y))
+
+    (tw, th), baseline = cv2.getTextSize(
+        text, cv2.FONT_HERSHEY_SIMPLEX, float(text_scale), int(text_thickness)
+    )
+    pad = 8
+    bx1 = max(0, x - pad)
+    by1 = max(0, y - th - pad)
+    bx2 = min(w_img - 1, x + tw + pad)
+    by2 = min(h_img - 1, y + baseline + pad)
+
+    roi = frame[by1 : by2 + 1, bx1 : bx2 + 1]
+    if roi.size > 0:
+        black = np.zeros_like(roi)
+        cv2.addWeighted(black, 0.45, roi, 0.55, 0.0, dst=roi)
+    cv2.putText(
+        frame,
+        text,
+        (x, y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        float(text_scale),
+        (255, 255, 255),
+        int(text_thickness),
+        cv2.LINE_AA,
+    )
+    return frame
 
 
 def _normalize_names(names):
@@ -343,27 +386,6 @@ def draw_tracked_boxes(
     return frame
 
 
-def _attach_masks_to_merged(merged, yolo_results, source_prefix: str):
-    if not yolo_results:
-        return
-    r = yolo_results[0]
-    masks = getattr(r, "masks", None)
-    if masks is None or getattr(masks, "data", None) is None:
-        return
-
-    mask_data = masks.data.detach().cpu().numpy()  # (n, h, w)
-    idx = 0
-    for det in merged:
-        if str(det.get("source", "")).lower().startswith(source_prefix.lower()):
-            if idx < mask_data.shape[0]:
-                det["mask"] = mask_data[idx]
-            idx += 1
-
-
-def _network_allowed(recording_enabled: bool) -> bool:
-    return (not S.REQUIRE_CONSENT_FOR_NETWORK) or bool(recording_enabled)
-
-
 def _build_models():
     people_seg_model = YOLO(S.PEOPLE_MODEL_PATH)
     fire_model = YOLO(S.FIRE_MODEL_PATH)
@@ -419,21 +441,35 @@ def _parse_args():
     return p.parse_args()
 
 
-def _send_udp_once(udp: UDPPublisher, pkt: dict) -> None:
-    msg = json.dumps(pkt)
-    print(msg)
-    try:
-        udp.send_json(pkt)
-    except Exception:
-        pass
-
-
 def _clamp01(x: float) -> float:
     if x < 0.0:
         return 0.0
     if x > 1.0:
         return 1.0
     return x
+
+
+def _passes_udp_world_projection_filter(
+    det: dict,
+    *,
+    allowed_classes: Optional[Sequence[str]] = None,
+    min_conf: Optional[float] = None,
+) -> bool:
+    cls_name = str(det.get("class") or det.get("class_name") or "").lower()
+    if allowed_classes is not None:
+        allow = {str(c).lower() for c in allowed_classes}
+        if cls_name not in allow:
+            return False
+
+    if min_conf is not None:
+        try:
+            conf = float(det.get("confidence", 0.0))
+        except Exception:
+            return False
+        if conf < float(min_conf):
+            return False
+
+    return True
 
 
 def _attach_foot_and_world(
@@ -443,6 +479,8 @@ def _attach_foot_and_world(
     pose_solution: Optional[PoseSolution],
     width: int,
     height: int,
+    projection_classes: Optional[Sequence[str]] = None,
+    projection_min_conf: Optional[float] = None,
 ) -> None:
     """Attach foot_* and world_* fields to merged detections in-place.
 
@@ -478,8 +516,14 @@ def _attach_foot_and_world(
         det["foot_x"] = float(foot_x_n)
         det["foot_y"] = float(foot_y_n)
 
+        should_project_world = _passes_udp_world_projection_filter(
+            det,
+            allowed_classes=projection_classes,
+            min_conf=projection_min_conf,
+        )
+
         # If pose is valid, try to register the foot point onto the plane Y=0.
-        if not pose_valid:
+        if not pose_valid or not should_project_world:
             det["world_valid"] = False
             det["world_x"] = 0.0
             det["world_y"] = 0.0
@@ -504,6 +548,24 @@ def _attach_foot_and_world(
         det["world_z"] = float(P_w[2])
 
 
+def _make_opencv_tracker() -> OpenCVKalmanIOUTracker:
+    return OpenCVKalmanIOUTracker(
+        min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
+        max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
+        per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
+        process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
+        measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
+        matching_method=str(getattr(S, "TRACK_MATCHING_METHOD", "hungarian")),
+        min_match_score=float(getattr(S, "TRACK_MIN_MATCH_SCORE", 0.45)),
+        max_foot_distance_norm=float(getattr(S, "TRACK_MAX_FOOT_DISTANCE_NORM", 0.08)),
+        max_world_distance_m=float(getattr(S, "TRACK_MAX_WORLD_DISTANCE_M", 2.5)),
+        use_world_position=bool(getattr(S, "TRACK_USE_WORLD_POSITION", True)),
+        world_score_weight=float(getattr(S, "TRACK_WORLD_SCORE_WEIGHT", 0.65)),
+        iou_score_weight=float(getattr(S, "TRACK_IOU_SCORE_WEIGHT", 0.25)),
+        foot_score_weight=float(getattr(S, "TRACK_FOOT_SCORE_WEIGHT", 0.10)),
+    )
+
+
 def run_test(args) -> int:
     people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = _build_models()
 
@@ -521,8 +583,19 @@ def run_test(args) -> int:
         marker_size_m=float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
         marker_world_positions=getattr(S, "POSE_MARKER_WORLD_POSITIONS", {0: (0.0, 0.0, 0.0)}),
         aruco_dict_name=str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
+        use_case=str(getattr(S, "POSE_USE_CASE", "auto")),
+        single_init_solver=str(getattr(S, "POSE_SINGLE_INIT_SOLVER", "ippe_square")),
+        multi_init_solver=str(getattr(S, "POSE_MULTI_INIT_SOLVER", "ransac")),
+        refiner=str(getattr(S, "POSE_REFINER", "vvs")),
+        enable_refinement=bool(getattr(S, "POSE_ENABLE_REFINEMENT", True)),
+        min_markers_for_multi=int(getattr(S, "POSE_MIN_MARKERS_FOR_MULTI", 2)),
+        corner_refinement=str(getattr(S, "POSE_CORNER_REFINEMENT", "none")),
+        ransac_reproj_threshold_px=float(getattr(S, "POSE_RANSAC_REPROJ_THRESHOLD_PX", 4.0)),
+        ransac_confidence=float(getattr(S, "POSE_RANSAC_CONFIDENCE", 0.99)),
+        ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
+    pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
 
     infer_frame = frame.copy() if pose_draw else frame
     pose_data, pose_solution = pose_estimator.estimate_with_solution(frame, draw=pose_draw)
@@ -542,12 +615,7 @@ def run_test(args) -> int:
         fire_results,
         people_model=people_seg_label,
         fire_model=fire_label,
-        seg_on=bool(S.ATTACH_PEOPLE_MASKS_TO_LOG),
-        timestamp=now,
     )
-
-    if S.ATTACH_FIRE_MASKS_TO_LOG:
-        _attach_masks_to_merged(merged, fire_results, "fire")
 
     for det in merged:
         if det.get("class") == "item":
@@ -560,6 +628,8 @@ def run_test(args) -> int:
         pose_solution=pose_solution,
         width=w,
         height=h,
+        projection_classes=S.UDP_SEND_CLASSES,
+        projection_min_conf=S.UDP_MIN_CONF,
     )
 
     pkt = to_unity_udp_packet(
@@ -593,6 +663,16 @@ def run_test(args) -> int:
         if S.DJI_MENU_OVERLAY_ENABLED_DEFAULT and dji_overlay is not None:
             frame = apply_rgba_overlay_fullframe(frame, dji_overlay)
 
+        if pose_mode_overlay_on:
+            frame = draw_pose_mode_status(
+                frame,
+                pose_estimator.get_pose_mode_overlay_text(),
+                enabled=pose_mode_overlay_on,
+                origin=getattr(S, "POSE_MODE_OVERLAY_ORIGIN", (20, 40)),
+                text_scale=float(getattr(S, "POSE_MODE_OVERLAY_TEXT_SCALE", 0.9)),
+                text_thickness=int(getattr(S, "POSE_MODE_OVERLAY_TEXT_THICKNESS", 2)),
+            )
+
         cv2.imshow(S.WINDOW_NAME, frame)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
@@ -620,13 +700,7 @@ def run_live(args) -> int:
 
     tracker = None
     if tracking_enabled and tracking_method == "opencv":
-        tracker = OpenCVKalmanIOUTracker(
-            min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
-            max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
-            per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
-            process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
-            measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
-        )
+        tracker = _make_opencv_tracker()
 
     pose_estimator = ArucoPoseEstimator(
         enabled=bool(getattr(S, "POSE_ENABLED_DEFAULT", True)),
@@ -634,13 +708,25 @@ def run_live(args) -> int:
         marker_size_m=float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
         marker_world_positions=getattr(S, "POSE_MARKER_WORLD_POSITIONS", {0: (0.0, 0.0, 0.0)}),
         aruco_dict_name=str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
+        use_case=str(getattr(S, "POSE_USE_CASE", "auto")),
+        single_init_solver=str(getattr(S, "POSE_SINGLE_INIT_SOLVER", "ippe_square")),
+        multi_init_solver=str(getattr(S, "POSE_MULTI_INIT_SOLVER", "ransac")),
+        refiner=str(getattr(S, "POSE_REFINER", "vvs")),
+        enable_refinement=bool(getattr(S, "POSE_ENABLE_REFINEMENT", True)),
+        min_markers_for_multi=int(getattr(S, "POSE_MIN_MARKERS_FOR_MULTI", 2)),
+        corner_refinement=str(getattr(S, "POSE_CORNER_REFINEMENT", "none")),
+        ransac_reproj_threshold_px=float(getattr(S, "POSE_RANSAC_REPROJ_THRESHOLD_PX", 4.0)),
+        ransac_confidence=float(getattr(S, "POSE_RANSAC_CONFIDENCE", 0.99)),
+        ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
+    pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
 
     dji_overlay_on = bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT)
     dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
 
     active_camera_source = S.CAMERA_SOURCE_DEFAULT
+    fire_class_names = {str(v).lower() for v in fire_label.names.values()}
 
     fps_hist = deque(maxlen=30)
     drop_hist = deque(maxlen=30)
@@ -657,7 +743,6 @@ def run_live(args) -> int:
     window_start = time.time()
     frame_id = 0
 
-    rtsp = RTSPStreamer(S.RTSP_URL, fps=target_fps) if S.ENABLE_RTSP else None
     udp = UDPPublisher(S.UDP_IP, S.UDP_PORT) if S.ENABLE_UDP else None
 
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
@@ -736,32 +821,25 @@ def run_live(args) -> int:
                 fire_results,
                 people_model=people_seg_label,
                 fire_model=fire_label,
-                seg_on=bool(people_on and S.ATTACH_PEOPLE_MASKS_TO_LOG),
-                timestamp=now,
             )
 
-            if fire_on and S.ATTACH_FIRE_MASKS_TO_LOG:
-                _attach_masks_to_merged(merged, fire_results, "fire")
-
             for det in merged:
-                det["frame_id"] = frame_id
                 if det.get("class") == "item":
                     det["class"] = "person"
 
                 if use_ultra_track and det.get("track_id") is not None:
                     try:
                         base_id = int(det["track_id"])
-                        if str(det.get("source", "")).lower().startswith("fire"):
+                        cls_name = str(det.get("class", "")).lower()
+                        if cls_name in fire_class_names:
                             det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_FIRE", 1_000_000))
                         else:
                             det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_PEOPLE", 0))
                     except Exception:
                         pass
 
-            if tracking_enabled and tracking_method == "opencv" and tracker is not None:
-                tracker.update(merged)
-
-            # Attach "foot" + optional world registration fields for UDP consumers.
+            # Attach "foot" + optional world registration fields before OpenCV tracking
+            # so the tracker can use ground-plane coordinates when pose is valid.
             h_img, w_img = frame.shape[:2]
             _attach_foot_and_world(
                 merged,
@@ -769,9 +847,13 @@ def run_live(args) -> int:
                 pose_solution=pose_solution,
                 width=w_img,
                 height=h_img,
+                projection_classes=S.UDP_SEND_CLASSES,
+                projection_min_conf=S.UDP_MIN_CONF,
             )
 
-            counts = count_by_class(merged)
+            if tracking_enabled and tracking_method == "opencv" and tracker is not None:
+                tracker.update(merged)
+
             want_track_overlay = bool(tracking_enabled and draw_track_ids)
 
             if draw_detections and people_on:
@@ -811,41 +893,42 @@ def run_live(args) -> int:
                     box_thickness=2,
                 )
 
-            _ = counts
-
-            net_on = _network_allowed(recording_enabled)
-
             if dji_overlay_on and dji_overlay_bgra is not None:
                 frame = apply_rgba_overlay_fullframe(frame, dji_overlay_bgra)
 
-            allow_output = (not S.REQUIRE_CONSENT_FOR_OUTPUT) or recording_enabled
-            if S.SAVE_OUTPUT and allow_output:
+            if pose_mode_overlay_on:
+                frame = draw_pose_mode_status(
+                    frame,
+                    pose_estimator.get_pose_mode_overlay_text(),
+                    enabled=pose_mode_overlay_on,
+                    origin=getattr(S, "POSE_MODE_OVERLAY_ORIGIN", (20, 40)),
+                    text_scale=float(getattr(S, "POSE_MODE_OVERLAY_TEXT_SCALE", 0.9)),
+                    text_thickness=int(getattr(S, "POSE_MODE_OVERLAY_TEXT_THICKNESS", 2)),
+                )
+
+            if S.SAVE_OUTPUT and recording_enabled:
                 if out is None:
                     h, w = frame.shape[:2]
                     out = cv2.VideoWriter(S.OUTPUT_VIDEO, fourcc, target_fps, (w, h))
                 out.write(frame)
 
-            if net_on:
-                if udp is not None:
-                    h, w = frame.shape[:2]
-                    pkt = to_unity_udp_packet(
-                        merged,
-                        frame_id=frame_id,
-                        timestamp=now,
-                        width=w,
-                        height=h,
-                        class_map=S.UNITY_CLASS_ID,
-                        allowed_classes=S.UDP_SEND_CLASSES,
-                        min_conf=S.UDP_MIN_CONF,
-                    )
-                    pkt["pose"] = pose_data
-                    try:
-                        udp.send_json(pkt)
-                    except Exception:
-                        pass
-
-                if rtsp is not None:
-                    rtsp.write(frame)
+            if udp is not None:
+                h, w = frame.shape[:2]
+                pkt = to_unity_udp_packet(
+                    merged,
+                    frame_id=frame_id,
+                    timestamp=now,
+                    width=w,
+                    height=h,
+                    class_map=S.UNITY_CLASS_ID,
+                    allowed_classes=S.UDP_SEND_CLASSES,
+                    min_conf=S.UDP_MIN_CONF,
+                )
+                pkt["pose"] = pose_data
+                try:
+                    udp.send_json(pkt)
+                except Exception:
+                    pass
 
             if not args.no_gui:
                 cv2.imshow(S.WINDOW_NAME, frame)
@@ -858,16 +941,10 @@ def run_live(args) -> int:
 
             if key in S.KEY_TOGGLE_RECORDING:
                 if not recording_enabled:
-                    print(
-                        "[PII] USER_CONSENT: Recording ENABLED by user at",
-                        time.strftime("%Y-%m-%d %H:%M:%S"),
-                    )
+                    print("Recording ENABLED at", time.strftime("%Y-%m-%d %H:%M:%S"))
                     recording_enabled = True
                 else:
-                    print(
-                        "[PII] USER_CONSENT: Recording DISABLED at",
-                        time.strftime("%Y-%m-%d %H:%M:%S"),
-                    )
+                    print("Recording DISABLED at", time.strftime("%Y-%m-%d %H:%M:%S"))
                     recording_enabled = False
 
             elif key in S.KEY_TOGGLE_PEOPLE:
@@ -886,15 +963,12 @@ def run_live(args) -> int:
                 tracking_enabled = not tracking_enabled
                 if tracking_enabled and tracking_method == "opencv":
                     if tracker is None:
-                        tracker = OpenCVKalmanIOUTracker(
-                            min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
-                            max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
-                            per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
-                            process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
-                            measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
-                        )
+                        tracker = _make_opencv_tracker()
                     else:
                         tracker.reset()
+
+            elif key in getattr(S, "KEY_TOGGLE_POSE_MODE_OVERLAY", (ord("m"), ord("M"))):
+                pose_mode_overlay_on = not pose_mode_overlay_on
 
             elif key in S.KEY_TOGGLE_INPUT and S.INPUT_MODE.lower() == "camera":
                 prev = active_camera_source
@@ -909,10 +983,6 @@ def run_live(args) -> int:
                     cap, is_file_source, target_fps, video_start_wall, _input_desc = _open_capture(
                         "camera", active_camera_source
                     )
-
-                    if rtsp is not None:
-                        rtsp.close()
-                        rtsp = RTSPStreamer(S.RTSP_URL, fps=target_fps)
 
                     fps_hist.clear()
                     drop_hist.clear()
@@ -941,9 +1011,6 @@ def run_live(args) -> int:
 
         if not args.no_gui:
             cv2.destroyAllWindows()
-
-        if rtsp is not None:
-            rtsp.close()
 
         if udp is not None:
             udp.close()
