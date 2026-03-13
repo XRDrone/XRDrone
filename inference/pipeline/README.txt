@@ -217,6 +217,61 @@ If the live test fails with a timeout, that usually means:
   - the test is listening on the wrong port
   - another program is already using the port
 
+Command: python test_with_coverage.py --stats
+---------------------------------------------
+This runs UDP stats collection mode.
+
+What it does:
+  1) Runs the same formatter/schema checks as the default mode.
+  2) Runs the same localhost UDP loopback test as the default mode.
+  3) Opens a UDP listener on the configured port.
+  4) Collects packet and timing statistics from UDP packets sent by the pipeline.
+  5) Prints the collected stats to the terminal.
+
+This is useful for measuring runtime behavior such as:
+  - average packet size
+  - estimated source FPS
+  - estimated arrival FPS
+  - timing jitter
+  - frame gaps
+  - duplicate or out-of-order frames
+  - estimated person ID switches
+
+Expected success output:
+  PASSED: UDP formatter structure, UDP send/receive, and stats collection are valid
+
+Example:
+  python test_with_coverage.py --stats --packets 120 --timeout 8
+
+Important:
+  `--stats` does not generate packets by itself unless used with `--video`.
+  A separate pipeline process must already be running and sending UDP packets.
+
+
+Command: python test_with_coverage.py --video "/path/to/video.mp4" --stats
+--------------------------------------------------------------------------
+This runs the pipeline directly on a video file and prints UDP stats after the run finishes.
+
+What it does:
+  1) Runs the same formatter/schema checks as the default mode.
+  2) Runs the same localhost UDP loopback test as the default mode.
+  3) Launches the pipeline on the specified video file.
+  4) Collects UDP packet statistics while the video is being processed.
+  5) Prints the collected stats to the terminal when the video is done.
+
+This is useful when you want to evaluate a full video run without manually starting
+the pipeline in another terminal.
+
+Expected success output:
+  PASSED: UDP formatter structure, UDP send/receive, and video stats collection are valid
+
+Example:
+  python test_with_coverage.py --video "/path/to/video.mp4" --stats
+
+Notes:
+  - `--video` requires `--stats`
+  - when `--video` is used, the script processes the whole video automatically
+  - a progress bar is shown while packets are being collected
 
 How the validation works
 ------------------------
