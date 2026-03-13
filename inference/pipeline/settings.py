@@ -104,21 +104,28 @@ TRACKING_ENABLED_DEFAULT = True
 # Choose tracker backend:
 #  - "opencv": lightweight Kalman+IoU tracker in tracker.py
 #  - "ultralytics": Ultralytics built-in trackers (BoT-SORT/ByteTrack)
-TRACKING_METHOD = "opencv"  # "opencv" | "ultralytics"
+TRACKING_METHOD = "ultralytics"  # "opencv" | "ultralytics"
 
 # OpenCV tracker tuning
 TRACK_MIN_IOU = 0.30
-TRACK_MAX_AGE_FRAMES = 90  # how long an object can be missing and still keep its ID
+TRACK_MAX_AGE_FRAMES = 120  # how long an object can be missing and still keep its ID
 TRACK_PER_CLASS = True
 TRACK_KF_PROCESS_NOISE = 1e-2
 TRACK_KF_MEAS_NOISE = 1e-1
 
 # Matching backend for the OpenCV tracker.
 TRACK_MATCHING_METHOD = "hungarian"  # "hungarian" | "greedy"
+TRACK_MIN_MATCH_SCORE = 0.45
+TRACK_MAX_FOOT_DISTANCE_NORM = 0.08
+TRACK_MAX_WORLD_DISTANCE_M = 2.5
+TRACK_USE_WORLD_POSITION = True
+TRACK_WORLD_SCORE_WEIGHT = 0.65
+TRACK_IOU_SCORE_WEIGHT = 0.25
+TRACK_FOOT_SCORE_WEIGHT = 0.10
 
 # Ultralytics tracker config (only used when TRACKING_METHOD="ultralytics")
 # Ultralytics supports "botsort.yaml" (default) and "bytetrack.yaml".
-ULTRALYTICS_TRACKER = "bytetrack.yaml"
+ULTRALYTICS_TRACKER = "botsort_drone.yaml"
 
 # If you use separate trackers per model (people vs fire), offsets prevent ID collisions.
 TRACK_ID_OFFSET_PEOPLE = 0

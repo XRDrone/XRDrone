@@ -548,6 +548,24 @@ def _attach_foot_and_world(
         det["world_z"] = float(P_w[2])
 
 
+def _make_opencv_tracker() -> OpenCVKalmanIOUTracker:
+    return OpenCVKalmanIOUTracker(
+        min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
+        max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
+        per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
+        process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
+        measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
+        matching_method=str(getattr(S, "TRACK_MATCHING_METHOD", "hungarian")),
+        min_match_score=float(getattr(S, "TRACK_MIN_MATCH_SCORE", 0.45)),
+        max_foot_distance_norm=float(getattr(S, "TRACK_MAX_FOOT_DISTANCE_NORM", 0.08)),
+        max_world_distance_m=float(getattr(S, "TRACK_MAX_WORLD_DISTANCE_M", 2.5)),
+        use_world_position=bool(getattr(S, "TRACK_USE_WORLD_POSITION", True)),
+        world_score_weight=float(getattr(S, "TRACK_WORLD_SCORE_WEIGHT", 0.65)),
+        iou_score_weight=float(getattr(S, "TRACK_IOU_SCORE_WEIGHT", 0.25)),
+        foot_score_weight=float(getattr(S, "TRACK_FOOT_SCORE_WEIGHT", 0.10)),
+    )
+
+
 def run_test(args) -> int:
     people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = _build_models()
 
@@ -682,14 +700,7 @@ def run_live(args) -> int:
 
     tracker = None
     if tracking_enabled and tracking_method == "opencv":
-        tracker = OpenCVKalmanIOUTracker(
-            min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
-            max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
-            per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
-            process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
-            measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
-            matching_method=str(getattr(S, "TRACK_MATCHING_METHOD", "greedy")),
-        )
+        tracker = _make_opencv_tracker()
 
     pose_estimator = ArucoPoseEstimator(
         enabled=bool(getattr(S, "POSE_ENABLED_DEFAULT", True)),
@@ -827,10 +838,8 @@ def run_live(args) -> int:
                     except Exception:
                         pass
 
-            if tracking_enabled and tracking_method == "opencv" and tracker is not None:
-                tracker.update(merged)
-
-            # Attach "foot" + optional world registration fields for UDP consumers.
+            # Attach "foot" + optional world registration fields before OpenCV tracking
+            # so the tracker can use ground-plane coordinates when pose is valid.
             h_img, w_img = frame.shape[:2]
             _attach_foot_and_world(
                 merged,
@@ -841,6 +850,9 @@ def run_live(args) -> int:
                 projection_classes=S.UDP_SEND_CLASSES,
                 projection_min_conf=S.UDP_MIN_CONF,
             )
+
+            if tracking_enabled and tracking_method == "opencv" and tracker is not None:
+                tracker.update(merged)
 
             want_track_overlay = bool(tracking_enabled and draw_track_ids)
 
@@ -951,14 +963,7 @@ def run_live(args) -> int:
                 tracking_enabled = not tracking_enabled
                 if tracking_enabled and tracking_method == "opencv":
                     if tracker is None:
-                        tracker = OpenCVKalmanIOUTracker(
-                            min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
-                            max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
-                            per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
-                            process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
-                            measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
-                            matching_method=str(getattr(S, "TRACK_MATCHING_METHOD", "greedy")),
-                        )
+                        tracker = _make_opencv_tracker()
                     else:
                         tracker.reset()
 
