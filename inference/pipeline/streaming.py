@@ -25,6 +25,30 @@ import subprocess
 from typing import Any, Dict, Optional
 
 import numpy as np
+import settings as S
+
+try:
+    import orjson
+except Exception:  # pragma: no cover
+    orjson = None  # type: ignore
+
+
+def _encode_json_bytes(obj: Dict[str, Any]) -> bytes:
+    """
+    Encode a packet to UTF-8 JSON bytes without changing the JSON structure.
+    Uses orjson when enabled and available, otherwise falls back to compact stdlib JSON.
+    """
+    serializer = str(getattr(S, "JSON_SERIALIZER", "json")).strip().lower()
+    ensure_ascii = bool(getattr(S, "JSON_ENSURE_ASCII", False))
+
+    if serializer == "orjson" and orjson is not None:
+        return orjson.dumps(obj)
+
+    return json.dumps(
+        obj,
+        separators=(",", ":"),
+        ensure_ascii=ensure_ascii,
+    ).encode("utf-8")
 
 
 class UDPPublisher:
@@ -34,7 +58,7 @@ class UDPPublisher:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def send_json(self, obj: Dict[str, Any]) -> None:
-        msg = json.dumps(obj).encode("utf-8")
+        msg = _encode_json_bytes(obj)
         self.sock.sendto(msg, (self.ip, self.port))
 
     def close(self) -> None:

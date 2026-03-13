@@ -688,6 +688,7 @@ def run_live(args) -> int:
             per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
             process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
             measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
+            matching_method=str(getattr(S, "TRACK_MATCHING_METHOD", "greedy")),
         )
 
     pose_estimator = ArucoPoseEstimator(
@@ -956,6 +957,7 @@ def run_live(args) -> int:
                             per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
                             process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
                             measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
+                            matching_method=str(getattr(S, "TRACK_MATCHING_METHOD", "greedy")),
                         )
                     else:
                         tracker.reset()

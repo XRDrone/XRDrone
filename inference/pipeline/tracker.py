@@ -28,6 +28,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+try:
+    from scipy.optimize import linear_sum_assignment
+except Exception:  # pragma: no cover
+    linear_sum_assignment = None  # type: ignore
+
 
 def _xyxy_to_cxcywh(bbox_xyxy: Sequence[float]) -> Tuple[float, float, float, float]:
     x1, y1, x2, y2 = (float(v) for v in bbox_xyxy)
@@ -136,6 +141,7 @@ class OpenCVKalmanIOUTracker:
         dt: float = 1.0,
         process_noise: float = 1e-2,
         measurement_noise: float = 1e-1,
+        matching_method: str = "greedy",
     ) -> None:
         self.min_iou = float(min_iou)
         self.max_age = int(max_age_frames)
@@ -143,6 +149,7 @@ class OpenCVKalmanIOUTracker:
         self.dt = float(dt)
         self.process_noise = float(process_noise)
         self.measurement_noise = float(measurement_noise)
+        self.matching_method = str(matching_method or "greedy").strip().lower()
 
         self._next_id = 1
         self._tracks: List[_Track] = []
@@ -240,6 +247,40 @@ class OpenCVKalmanIOUTracker:
         unmatched_dets = np.flatnonzero(~used_dets).astype(int).tolist()
         return matches, unmatched_tracks, unmatched_dets
 
+    def _hungarian_match(
+        self,
+        track_bboxes: List[List[float]],
+        det_bboxes: List[List[float]],
+        iou_thresh: float,
+    ) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
+        """Return matches + unmatched indices using one-pass optimal assignment."""
+        if not track_bboxes or not det_bboxes:
+            return [], list(range(len(track_bboxes))), list(range(len(det_bboxes)))
+
+        iou_mat = _iou_matrix_xyxy(track_bboxes, det_bboxes)
+        if linear_sum_assignment is None:
+            return self._greedy_match(track_bboxes, det_bboxes, iou_thresh)
+
+        # Large gated cost for pairs below IoU threshold.
+        thresh = float(iou_thresh)
+        cost = np.where(iou_mat >= thresh, 1.0 - iou_mat, 1e6).astype(np.float32, copy=False)
+        row_ind, col_ind = linear_sum_assignment(cost)
+
+        matches: List[Tuple[int, int]] = []
+        used_tracks = np.zeros(len(track_bboxes), dtype=bool)
+        used_dets = np.zeros(len(det_bboxes), dtype=bool)
+
+        for ti, di in zip(row_ind.tolist(), col_ind.tolist()):
+            if float(iou_mat[ti, di]) < thresh:
+                continue
+            matches.append((int(ti), int(di)))
+            used_tracks[int(ti)] = True
+            used_dets[int(di)] = True
+
+        unmatched_tracks = np.flatnonzero(~used_tracks).astype(int).tolist()
+        unmatched_dets = np.flatnonzero(~used_dets).astype(int).tolist()
+        return matches, unmatched_tracks, unmatched_dets
+
     def update(self, detections: List[Dict[str, Any]]) -> None:
         """Assign/maintain det['track_id'] for this frame (in-place)."""
         # 1) predict all track positions
@@ -291,7 +332,10 @@ class OpenCVKalmanIOUTracker:
                     bb = [0.0, 0.0, 0.0, 0.0]
                 det_bboxes.append(list(map(float, bb)))
 
-            matches, _, un_det = self._greedy_match(track_bboxes, det_bboxes, self.min_iou)
+            if self.matching_method == "hungarian":
+                matches, _, un_det = self._hungarian_match(track_bboxes, det_bboxes, self.min_iou)
+            else:
+                matches, _, un_det = self._greedy_match(track_bboxes, det_bboxes, self.min_iou)
 
             # apply matches
             for local_ti, local_di in matches:

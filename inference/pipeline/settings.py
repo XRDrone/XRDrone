@@ -79,6 +79,15 @@ IMGSZ = 960
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 USE_FP16 = bool(torch.cuda.is_available())
 
+# -----------------------------
+# Serialization / transport
+# -----------------------------
+# Keep the UDP JSON schema identical, but allow a faster encoder path.
+# "orjson" -> use orjson when installed, with stdlib compact JSON fallback.
+# "json"   -> always use stdlib compact JSON.
+JSON_SERIALIZER = "orjson"  # "orjson" | "json"
+JSON_ENSURE_ASCII = False
+
 DEFAULT_FPS = 30.0
 WINDOW_NAME = "Live Pipeline"
 
@@ -103,6 +112,9 @@ TRACK_MAX_AGE_FRAMES = 90  # how long an object can be missing and still keep it
 TRACK_PER_CLASS = True
 TRACK_KF_PROCESS_NOISE = 1e-2
 TRACK_KF_MEAS_NOISE = 1e-1
+
+# Matching backend for the OpenCV tracker.
+TRACK_MATCHING_METHOD = "hungarian"  # "hungarian" | "greedy"
 
 # Ultralytics tracker config (only used when TRACKING_METHOD="ultralytics")
 # Ultralytics supports "botsort.yaml" (default) and "bytetrack.yaml".
