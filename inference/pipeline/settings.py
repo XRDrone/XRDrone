@@ -197,6 +197,24 @@ POSE_MODE_OVERLAY_TEXT_SCALE = 0.9
 POSE_MODE_OVERLAY_TEXT_THICKNESS = 2
 
 # -----------------------------
+# Motion smoothing (ArUco-based object registration)
+# -----------------------------
+# Single 0..1 slider used by both layers:
+#   0.0 = raw / most responsive
+#   1.0 = smoothest / most damped
+MOTION_SMOOTHING = 0.50
+MOTION_SMOOTHING_STEP = 0.05
+MOTION_SMOOTHING_DERIVATIVE_CUTOFF_HZ = 1.0
+MOTION_SMOOTHING_RESET_TIMEOUT_S = 0.75
+
+# Layer 1: smooth camera pose before world projection.
+POSE_MOTION_SMOOTHING_ENABLED_DEFAULT = True
+
+# Layer 2: smooth per-track world positions after projection.
+WORLD_MOTION_SMOOTHING_ENABLED_DEFAULT = True
+WORLD_MOTION_SMOOTHING_MAX_TRACK_AGE_S = 1.50
+
+# -----------------------------
 # Mask rendering
 # -----------------------------
 MASK_ALPHA = 0.35
@@ -232,6 +250,9 @@ KEY_TOGGLE_DRAW = (ord("v"), ord("V"))
 KEY_TOGGLE_DJI_OVERLAY = (ord("u"), ord("U"))
 KEY_TOGGLE_TRACKING = (ord("t"), ord("T"))
 KEY_TOGGLE_POSE_MODE_OVERLAY = (ord("m"), ord("M"))
+KEY_TOGGLE_MOTION_SMOOTHING = (ord("g"), ord("G"))
+KEY_DECREASE_MOTION_SMOOTHING = (ord("["), ord("{"))
+KEY_INCREASE_MOTION_SMOOTHING = (ord("]"), ord("}"))
 
 # -----------------------------
 # Test mode

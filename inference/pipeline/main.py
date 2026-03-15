@@ -39,6 +39,7 @@ from ultralytics import YOLO
 
 import settings as S
 from merger import merge_detections
+from motion_smoothing import PoseMotionSmoother, WorldTrackSmoother
 from output_formatter import to_unity_udp_packet
 from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
 from pose_estimator import ArucoPoseEstimator, PoseSolution
@@ -566,6 +567,40 @@ def _make_opencv_tracker() -> OpenCVKalmanIOUTracker:
     )
 
 
+def _make_pose_motion_smoother() -> PoseMotionSmoother:
+    return PoseMotionSmoother(
+        enabled=bool(getattr(S, "POSE_MOTION_SMOOTHING_ENABLED_DEFAULT", True)),
+        smoothness=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
+        derivative_cutoff_hz=float(getattr(S, "MOTION_SMOOTHING_DERIVATIVE_CUTOFF_HZ", 1.0)),
+        reset_timeout_s=float(getattr(S, "MOTION_SMOOTHING_RESET_TIMEOUT_S", 0.75)),
+        default_fps=float(getattr(S, "DEFAULT_FPS", 30.0)),
+    )
+
+
+def _make_world_motion_smoother() -> WorldTrackSmoother:
+    return WorldTrackSmoother(
+        enabled=bool(getattr(S, "WORLD_MOTION_SMOOTHING_ENABLED_DEFAULT", True)),
+        smoothness=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
+        derivative_cutoff_hz=float(getattr(S, "MOTION_SMOOTHING_DERIVATIVE_CUTOFF_HZ", 1.0)),
+        reset_timeout_s=float(getattr(S, "MOTION_SMOOTHING_RESET_TIMEOUT_S", 0.75)),
+        max_track_age_s=float(getattr(S, "WORLD_MOTION_SMOOTHING_MAX_TRACK_AGE_S", 1.5)),
+        default_fps=float(getattr(S, "DEFAULT_FPS", 30.0)),
+    )
+
+
+def _update_motion_smoothing_value(
+    pose_smoother: Optional[PoseMotionSmoother],
+    world_smoother: Optional[WorldTrackSmoother],
+    value: float,
+) -> float:
+    value = max(0.0, min(1.0, float(value)))
+    if pose_smoother is not None:
+        pose_smoother.set_smoothness(value)
+    if world_smoother is not None:
+        world_smoother.set_smoothness(value)
+    return value
+
+
 def run_test(args) -> int:
     people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = _build_models()
 
@@ -596,9 +631,11 @@ def run_test(args) -> int:
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
     pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
+    pose_smoother = _make_pose_motion_smoother()
 
     infer_frame = frame.copy() if pose_draw else frame
     pose_data, pose_solution = pose_estimator.estimate_with_solution(frame, draw=pose_draw)
+    pose_data, pose_solution = pose_smoother.smooth(pose_data, pose_solution, timestamp=now)
 
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
 
@@ -721,6 +758,9 @@ def run_live(args) -> int:
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
     pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
+    pose_smoother = _make_pose_motion_smoother()
+    world_smoother = _make_world_motion_smoother()
+    motion_smoothing_value = float(getattr(S, "MOTION_SMOOTHING", 0.0))
 
     dji_overlay_on = bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT)
     dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
@@ -764,6 +804,7 @@ def run_live(args) -> int:
 
             infer_frame = frame.copy() if pose_draw else frame
             pose_data, pose_solution = pose_estimator.estimate_with_solution(frame, draw=pose_draw)
+            pose_data, pose_solution = pose_smoother.smooth(pose_data, pose_solution, timestamp=now)
 
             wall_now = time.time()
             dt = wall_now - t_prev
@@ -853,6 +894,8 @@ def run_live(args) -> int:
 
             if tracking_enabled and tracking_method == "opencv" and tracker is not None:
                 tracker.update(merged)
+
+            world_smoother.update_inplace(merged, timestamp=now)
 
             want_track_overlay = bool(tracking_enabled and draw_track_ids)
 
@@ -989,6 +1032,8 @@ def run_live(args) -> int:
                     t_prev = time.time()
                     window_frames = 0
                     window_start = time.time()
+                    pose_smoother.reset()
+                    world_smoother.reset()
 
                 except Exception as e:
                     print("Toggle input failed:", e)
@@ -996,6 +1041,32 @@ def run_live(args) -> int:
                     cap, is_file_source, target_fps, video_start_wall, _input_desc = _open_capture(
                         "camera", active_camera_source
                     )
+                    pose_smoother.reset()
+                    world_smoother.reset()
+
+            elif key in getattr(S, "KEY_TOGGLE_MOTION_SMOOTHING", (ord("g"), ord("G"))):
+                new_enabled = not bool(pose_smoother.enabled)
+                pose_smoother.set_enabled(new_enabled)
+                world_smoother.set_enabled(new_enabled)
+                print(
+                    f"Motion smoothing {'ENABLED' if new_enabled else 'DISABLED'} | value={motion_smoothing_value:.2f}"
+                )
+
+            elif key in getattr(S, "KEY_DECREASE_MOTION_SMOOTHING", (ord("["), ord("{"))):
+                motion_smoothing_value = _update_motion_smoothing_value(
+                    pose_smoother,
+                    world_smoother,
+                    motion_smoothing_value - float(getattr(S, "MOTION_SMOOTHING_STEP", 0.05)),
+                )
+                print(f"Motion smoothing: {motion_smoothing_value:.2f}")
+
+            elif key in getattr(S, "KEY_INCREASE_MOTION_SMOOTHING", (ord("]"), ord("}"))):
+                motion_smoothing_value = _update_motion_smoothing_value(
+                    pose_smoother,
+                    world_smoother,
+                    motion_smoothing_value + float(getattr(S, "MOTION_SMOOTHING_STEP", 0.05)),
+                )
+                print(f"Motion smoothing: {motion_smoothing_value:.2f}")
 
     finally:
         try:
