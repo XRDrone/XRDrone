@@ -8,3 +8,4 @@ models/yolo_people_fire_smoke/runs/
 *.avif
 *.pt
 tools/
+inference/pipeline/runs
