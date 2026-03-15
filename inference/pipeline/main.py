@@ -38,6 +38,7 @@ import torch
 from ultralytics import YOLO
 
 import settings as S
+from id_flicker_mitigation import RobustIDFlickerMitigator
 from merger import merge_detections
 from motion_smoothing import PoseMotionSmoother, WorldTrackSmoother
 from output_formatter import to_unity_udp_packet
@@ -352,8 +353,9 @@ def draw_tracked_boxes(
 
         cls_name = str(det.get("class") or "obj").lower()
         color = colors.get(cls_name, default_color)
-        conf = float(det.get("confidence", 0.0))
+        conf = float(det.get("udp_confidence", det.get("confidence", 0.0)))
         tid = det.get("track_id", None)
+        continuity_state = str(det.get("continuity_state", "")).lower()
 
         if tid is None:
             label = f"{cls_name} {conf * 100:.1f}%"
@@ -362,6 +364,9 @@ def draw_tracked_boxes(
                 label = f"{cls_name} #{int(tid)} {conf * 100:.1f}%"
             except Exception:
                 label = f"{cls_name} {conf * 100:.1f}%"
+
+        if continuity_state == "coasted":
+            label += " [hold]"
 
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, int(box_thickness))
 
@@ -588,6 +593,21 @@ def _make_world_motion_smoother() -> WorldTrackSmoother:
     )
 
 
+def _make_id_flicker_mitigator() -> RobustIDFlickerMitigator:
+    return RobustIDFlickerMitigator(
+        enabled=bool(getattr(S, "ID_FLICKER_MITIGATION_ENABLED_DEFAULT", True)),
+        apply_classes=getattr(S, "ID_FLICKER_APPLY_CLASSES", ("person",)),
+        tau_on=float(getattr(S, "ID_FLICKER_TAU_ON", getattr(S, "UDP_MIN_CONF", 0.80))),
+        tau_off=float(getattr(S, "ID_FLICKER_TAU_OFF", 0.55)),
+        coast_frames=int(getattr(S, "ID_FLICKER_COAST_FRAMES", 6)),
+        drop_frames=int(getattr(S, "ID_FLICKER_DROP_FRAMES", 45)),
+        ema_alpha=float(getattr(S, "ID_FLICKER_EMA_ALPHA", 0.45)),
+        use_conf_ema=bool(getattr(S, "ID_FLICKER_USE_CONF_EMA", True)),
+        require_track_id=bool(getattr(S, "ID_FLICKER_REQUIRE_TRACK_ID", True)),
+        coast_conf_decay=float(getattr(S, "ID_FLICKER_COAST_CONF_DECAY", 0.985)),
+    )
+
+
 def _update_motion_smoothing_value(
     pose_smoother: Optional[PoseMotionSmoother],
     world_smoother: Optional[WorldTrackSmoother],
@@ -760,6 +780,7 @@ def run_live(args) -> int:
     pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
     pose_smoother = _make_pose_motion_smoother()
     world_smoother = _make_world_motion_smoother()
+    id_flicker_mitigator = _make_id_flicker_mitigator()
     motion_smoothing_value = float(getattr(S, "MOTION_SMOOTHING", 0.0))
 
     dji_overlay_on = bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT)
@@ -786,6 +807,8 @@ def run_live(args) -> int:
     udp = UDPPublisher(S.UDP_IP, S.UDP_PORT) if S.ENABLE_UDP else None
 
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
+    people_track_conf = float(getattr(S, "TRACKING_INPUT_CONF_PEOPLE", S.PEOPLE_CONF))
+    fire_track_conf = float(getattr(S, "TRACKING_INPUT_CONF_FIRE", S.FIRE_CONF))
 
     try:
         while True:
@@ -831,7 +854,7 @@ def run_live(args) -> int:
                 if use_ultra_track:
                     people_results = people_seg_model.track(
                         infer_frame,
-                        conf=S.PEOPLE_CONF,
+                        conf=people_track_conf,
                         classes=detect_class_ids,
                         persist=True,
                         tracker=ultra_tracker_yaml,
@@ -849,7 +872,7 @@ def run_live(args) -> int:
                 if use_ultra_track:
                     fire_results = fire_model.track(
                         infer_frame,
-                        conf=S.FIRE_CONF,
+                        conf=fire_track_conf,
                         persist=True,
                         tracker=ultra_tracker_yaml,
                         **pred_kw,
@@ -897,6 +920,11 @@ def run_live(args) -> int:
 
             world_smoother.update_inplace(merged, timestamp=now)
 
+            if tracking_enabled:
+                udp_ready_detections = id_flicker_mitigator.apply(merged)
+            else:
+                udp_ready_detections = list(merged)
+
             want_track_overlay = bool(tracking_enabled and draw_track_ids)
 
             if draw_detections and people_on:
@@ -928,7 +956,7 @@ def run_live(args) -> int:
             if draw_detections and want_track_overlay:
                 frame = draw_tracked_boxes(
                     frame,
-                    merged,
+                    udp_ready_detections,
                     colors=S.COLORS,
                     default_color=(255, 255, 255),
                     text_scale=S.MASK_TEXT_SCALE,
@@ -958,7 +986,7 @@ def run_live(args) -> int:
             if udp is not None:
                 h, w = frame.shape[:2]
                 pkt = to_unity_udp_packet(
-                    merged,
+                    udp_ready_detections,
                     frame_id=frame_id,
                     timestamp=now,
                     width=w,
@@ -992,9 +1020,11 @@ def run_live(args) -> int:
 
             elif key in S.KEY_TOGGLE_PEOPLE:
                 people_on = not people_on
+                id_flicker_mitigator.reset()
 
             elif key in S.KEY_TOGGLE_FIRE:
                 fire_on = not fire_on
+                id_flicker_mitigator.reset()
 
             elif key in S.KEY_TOGGLE_DRAW:
                 draw_detections = not draw_detections
@@ -1004,6 +1034,7 @@ def run_live(args) -> int:
 
             elif key in getattr(S, "KEY_TOGGLE_TRACKING", (ord("t"), ord("T"))):
                 tracking_enabled = not tracking_enabled
+                id_flicker_mitigator.reset()
                 if tracking_enabled and tracking_method == "opencv":
                     if tracker is None:
                         tracker = _make_opencv_tracker()
@@ -1034,6 +1065,7 @@ def run_live(args) -> int:
                     window_start = time.time()
                     pose_smoother.reset()
                     world_smoother.reset()
+                    id_flicker_mitigator.reset()
 
                 except Exception as e:
                     print("Toggle input failed:", e)
@@ -1043,6 +1075,7 @@ def run_live(args) -> int:
                     )
                     pose_smoother.reset()
                     world_smoother.reset()
+                    id_flicker_mitigator.reset()
 
             elif key in getattr(S, "KEY_TOGGLE_MOTION_SMOOTHING", (ord("g"), ord("G"))):
                 new_enabled = not bool(pose_smoother.enabled)

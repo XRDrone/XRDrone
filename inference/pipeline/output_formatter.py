@@ -31,6 +31,10 @@ Notes
 World registration fields are pass-through:
   - If merge-stage / pipeline code provides det["world_valid"] and world_*, they will be included.
   - Otherwise they default to false / 0.0.
+
+Optional internal helper fields are also supported:
+  - det["udp_confidence"]: confidence value to place into the UDP packet
+  - det["force_udp_emit"]: bypass min_conf filtering for sender-side continuity/coasting
 """
 
 from __future__ import annotations
@@ -103,8 +107,9 @@ def to_unity_udp_packet(
         if allow is not None and cls_name not in allow:
             continue
 
-        conf = float(det.get("confidence", 0.0))
-        if min_conf_f is not None and conf < min_conf_f:
+        conf = float(det.get("udp_confidence", det.get("confidence", 0.0)))
+        force_emit = bool(det.get("force_udp_emit", False))
+        if min_conf_f is not None and conf < min_conf_f and not force_emit:
             continue
 
         bbox = det.get("bbox_xyxy")

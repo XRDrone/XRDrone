@@ -127,6 +127,11 @@ TRACK_FOOT_SCORE_WEIGHT = 0.10
 # Ultralytics supports "botsort.yaml" (default) and "bytetrack.yaml".
 ULTRALYTICS_TRACKER = "botsort_drone.yaml"
 
+# Lower tracking-time detector thresholds so BoT-SORT/ByteTrack can associate
+# weaker detections without immediately losing the existing track ID.
+TRACKING_INPUT_CONF_PEOPLE = 0.10
+TRACKING_INPUT_CONF_FIRE = 0.10
+
 # If you use separate trackers per model (people vs fire), offsets prevent ID collisions.
 TRACK_ID_OFFSET_PEOPLE = 0
 TRACK_ID_OFFSET_FIRE = 1_000_000
@@ -135,6 +140,33 @@ TRACK_ID_OFFSET_FIRE = 1_000_000
 DRAW_TRACK_IDS = True
 
 DRAW_DETECTIONS_DEFAULT = True
+
+# -----------------------------
+# Robust mitigation of Object-ID flicker in UDP JSON streams
+# -----------------------------
+# Sender-side continuity layer:
+#   - tau_on / tau_off hysteresis
+#   - per-track confidence EMA
+#   - bounded hold-and-forward ("coasting")
+#
+# This does not change the external UDP schema.
+ID_FLICKER_MITIGATION_ENABLED_DEFAULT = True
+ID_FLICKER_APPLY_CLASSES = ("person",)
+ID_FLICKER_REQUIRE_TRACK_ID = True
+
+# Confidence gate:
+#   new IDs must reach tau_on
+#   existing emitted IDs can persist down to tau_off
+ID_FLICKER_USE_CONF_EMA = True
+ID_FLICKER_EMA_ALPHA = 0.45
+ID_FLICKER_TAU_ON = 0.80
+ID_FLICKER_TAU_OFF = 0.55
+
+# Keep emitting a recently seen ID for a short time even when detections dip
+# or one/few frames are missed.
+ID_FLICKER_COAST_FRAMES = 6
+ID_FLICKER_DROP_FRAMES = 45
+ID_FLICKER_COAST_CONF_DECAY = 0.985
 
 # -----------------------------
 # Pose estimation (camera pose via ArUco)
