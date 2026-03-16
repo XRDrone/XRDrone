@@ -135,6 +135,31 @@ These settings smooth camera pose and projected object motion.
 | `MOTION_SMOOTHING_RESET_TIMEOUT_S` | Time after which smoothing state resets if updates stop arriving. |
 | `WORLD_MOTION_SMOOTHING_MAX_TRACK_AGE_S` | Maximum age of a track that can still be smoothed in world space. |
 
+## Adaptive Runtime Tuning
+
+These settings enable the bounded runtime controller that adjusts smoothing and flicker-mitigation values using rolling metrics such as pose validity, pose jitter, coasting ratio, and estimated ID-switch rate. It does **not** change marker size, marker world positions, Unity class IDs, the UDP schema, or the structural pose-solver mode policy.
+
+| Setting | What it does |
+|---|---|
+| `ADAPTIVE_TUNING_ENABLED` | Turns adaptive runtime tuning on or off. |
+| `ADAPTIVE_TUNING_LOG_UPDATES` | If `True`, prints adaptive tuning updates and the metrics that triggered them. |
+| `ADAPTIVE_TUNING_TARGET_CLASSES` | Classes monitored by the runtime tuner for continuity metrics and ID-switch estimation. |
+| `ADAPTIVE_TUNING_WINDOW_FRAMES` | Rolling history size used to evaluate runtime quality. |
+| `ADAPTIVE_TUNING_UPDATE_INTERVAL_FRAMES` | How often the tuner is allowed to evaluate and propose changes. |
+| `ADAPTIVE_TUNING_COOLDOWN_FRAMES` | Minimum number of frames between applied adaptive updates. |
+| `ADAPTIVE_TUNING_IOU_MATCH_THRESHOLD` | IoU threshold used when estimating probable track ID switches from consecutive frames. |
+| `ADAPTIVE_MOTION_SMOOTHING_MIN` | Lower bound the tuner may use for motion smoothing. |
+| `ADAPTIVE_MOTION_SMOOTHING_MAX` | Upper bound the tuner may use for motion smoothing. |
+| `ADAPTIVE_MOTION_SMOOTHING_STEP` | Largest smoothing change the tuner may apply in one update. |
+| `ADAPTIVE_ID_TAU_ON_MIN` | Minimum allowed `tau_on` value during adaptation. |
+| `ADAPTIVE_ID_TAU_ON_MAX` | Maximum allowed `tau_on` value during adaptation. |
+| `ADAPTIVE_ID_TAU_OFF_MIN` | Minimum allowed `tau_off` value during adaptation. |
+| `ADAPTIVE_ID_TAU_OFF_MAX` | Maximum allowed `tau_off` value during adaptation. |
+| `ADAPTIVE_ID_TAU_STEP` | Largest `tau_on` / `tau_off` change the tuner may apply in one update. |
+| `ADAPTIVE_ID_COAST_FRAMES_MIN` | Minimum allowed coasting duration during adaptation. |
+| `ADAPTIVE_ID_COAST_FRAMES_MAX` | Maximum allowed coasting duration during adaptation. |
+| `ADAPTIVE_ID_COAST_STEP` | Largest coasting-duration change the tuner may apply in one update. |
+
 ## Mask Rendering
 
 | Setting | What it does |
@@ -188,3 +213,4 @@ These settings smooth camera pose and projected object motion.
   - `POSE_CORNER_REFINEMENT`
 - `DEVICE` and `USE_FP16` are chosen automatically from CUDA availability.
 - The flicker-mitigation and motion-smoothing sections are the main controls for making tracked objects look more stable.
+- The adaptive runtime tuning section adds a bounded controller on top of those controls so the pipeline can respond to changing conditions without changing the scene definition or packet schema.

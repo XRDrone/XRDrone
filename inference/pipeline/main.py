@@ -36,6 +36,7 @@ import cv2
 import numpy as np
 import settings as S
 import torch
+from adaptive_tuning import AdaptiveRuntimeTuner
 from id_flicker_mitigation import RobustIDFlickerMitigator
 from merger import merge_detections
 from motion_smoothing import PoseMotionSmoother, WorldTrackSmoother
@@ -610,6 +611,48 @@ def _make_id_flicker_mitigator() -> RobustIDFlickerMitigator:
     )
 
 
+def _make_adaptive_runtime_tuner() -> AdaptiveRuntimeTuner:
+    return AdaptiveRuntimeTuner(
+        enabled=bool(getattr(S, "ADAPTIVE_TUNING_ENABLED", True)),
+        target_classes=getattr(S, "ADAPTIVE_TUNING_TARGET_CLASSES", ("person",)),
+        window_frames=int(getattr(S, "ADAPTIVE_TUNING_WINDOW_FRAMES", 45)),
+        update_interval_frames=int(getattr(S, "ADAPTIVE_TUNING_UPDATE_INTERVAL_FRAMES", 15)),
+        cooldown_frames=int(getattr(S, "ADAPTIVE_TUNING_COOLDOWN_FRAMES", 30)),
+        iou_match_threshold=float(getattr(S, "ADAPTIVE_TUNING_IOU_MATCH_THRESHOLD", 0.35)),
+        motion_smoothing_min=float(getattr(S, "ADAPTIVE_MOTION_SMOOTHING_MIN", 0.30)),
+        motion_smoothing_max=float(getattr(S, "ADAPTIVE_MOTION_SMOOTHING_MAX", 0.85)),
+        motion_smoothing_step=float(getattr(S, "ADAPTIVE_MOTION_SMOOTHING_STEP", 0.05)),
+        id_tau_on_min=float(getattr(S, "ADAPTIVE_ID_TAU_ON_MIN", 0.75)),
+        id_tau_on_max=float(getattr(S, "ADAPTIVE_ID_TAU_ON_MAX", 0.90)),
+        id_tau_off_min=float(getattr(S, "ADAPTIVE_ID_TAU_OFF_MIN", 0.45)),
+        id_tau_off_max=float(getattr(S, "ADAPTIVE_ID_TAU_OFF_MAX", 0.65)),
+        id_tau_step=float(getattr(S, "ADAPTIVE_ID_TAU_STEP", 0.02)),
+        id_coast_frames_min=int(getattr(S, "ADAPTIVE_ID_COAST_FRAMES_MIN", 3)),
+        id_coast_frames_max=int(getattr(S, "ADAPTIVE_ID_COAST_FRAMES_MAX", 10)),
+        id_coast_step=int(getattr(S, "ADAPTIVE_ID_COAST_STEP", 1)),
+        base_motion_smoothing=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
+        base_tau_on=float(getattr(S, "ID_FLICKER_TAU_ON", getattr(S, "UDP_MIN_CONF", 0.80))),
+        base_tau_off=float(getattr(S, "ID_FLICKER_TAU_OFF", 0.55)),
+        base_coast_frames=int(getattr(S, "ID_FLICKER_COAST_FRAMES", 6)),
+    )
+
+
+def _format_adaptive_metrics(metrics) -> str:
+    return (
+        "pose_valid={:.0%}, markers={:.2f}, pos_jitter={:.3f}m, rot_jitter={:.2f}deg, "
+        "coast={:.0%}, id_switch={:.0%}, fps={:.1f}, drops={:.2f}"
+    ).format(
+        float(getattr(metrics, "pose_valid_ratio", 0.0)),
+        float(getattr(metrics, "avg_markers_used", 0.0)),
+        float(getattr(metrics, "pose_position_jitter_m", 0.0)),
+        float(getattr(metrics, "pose_rotation_jitter_deg", 0.0)),
+        float(getattr(metrics, "coast_ratio", 0.0)),
+        float(getattr(metrics, "id_switch_rate", 0.0)),
+        float(getattr(metrics, "avg_fps", 0.0)),
+        float(getattr(metrics, "avg_drop_frames", 0.0)),
+    )
+
+
 def _update_motion_smoothing_value(
     pose_smoother: PoseMotionSmoother | None,
     world_smoother: WorldTrackSmoother | None,
@@ -798,6 +841,8 @@ def run_live(args) -> int:
     pose_smoother = _make_pose_motion_smoother()
     world_smoother = _make_world_motion_smoother()
     id_flicker_mitigator = _make_id_flicker_mitigator()
+    adaptive_tuner = _make_adaptive_runtime_tuner()
+    adaptive_tuning_log_updates = bool(getattr(S, "ADAPTIVE_TUNING_LOG_UPDATES", True))
     motion_smoothing_value = float(getattr(S, "MOTION_SMOOTHING", 0.0))
 
     dji_overlay_on = bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT)
@@ -941,6 +986,46 @@ def run_live(args) -> int:
             else:
                 udp_ready_detections = list(merged)
 
+            adaptive_tuner.record_frame(
+                pose_data=pose_data,
+                raw_detections=merged,
+                udp_ready_detections=udp_ready_detections,
+            )
+            avg_fps = float(sum(fps_hist) / len(fps_hist)) if fps_hist else 0.0
+            avg_drops = float(sum(drop_hist) / len(drop_hist)) if drop_hist else 0.0
+            tuning_update = adaptive_tuner.propose_adjustment(
+                current_motion_smoothing=motion_smoothing_value,
+                current_tau_on=id_flicker_mitigator.tau_on,
+                current_tau_off=id_flicker_mitigator.tau_off,
+                current_coast_frames=id_flicker_mitigator.coast_frames,
+                avg_fps=avg_fps,
+                avg_drop_frames=avg_drops,
+            )
+            if tuning_update is not None and bool(tuning_update.get("changed", False)):
+                motion_smoothing_value = _update_motion_smoothing_value(
+                    pose_smoother,
+                    world_smoother,
+                    float(tuning_update["motion_smoothing"]),
+                )
+                id_flicker_mitigator.set_runtime_policy(
+                    tau_on=float(tuning_update["tau_on"]),
+                    tau_off=float(tuning_update["tau_off"]),
+                    coast_frames=int(tuning_update["coast_frames"]),
+                )
+                if adaptive_tuning_log_updates:
+                    metrics_text = _format_adaptive_metrics(tuning_update["metrics"])
+                    print(
+                        "Adaptive tuning [{mode}] -> smooth={smooth:.2f}, tau_on={tau_on:.2f}, "
+                        "tau_off={tau_off:.2f}, coast={coast} | {metrics}".format(
+                            mode=str(tuning_update.get("mode", "?")),
+                            smooth=motion_smoothing_value,
+                            tau_on=float(id_flicker_mitigator.tau_on),
+                            tau_off=float(id_flicker_mitigator.tau_off),
+                            coast=int(id_flicker_mitigator.coast_frames),
+                            metrics=metrics_text,
+                        )
+                    )
+
             want_track_overlay = bool(tracking_enabled and draw_track_ids)
 
             if draw_detections and people_on:
@@ -1037,10 +1122,12 @@ def run_live(args) -> int:
             elif key in S.KEY_TOGGLE_PEOPLE:
                 people_on = not people_on
                 id_flicker_mitigator.reset()
+                adaptive_tuner.reset()
 
             elif key in S.KEY_TOGGLE_FIRE:
                 fire_on = not fire_on
                 id_flicker_mitigator.reset()
+                adaptive_tuner.reset()
 
             elif key in S.KEY_TOGGLE_DRAW:
                 draw_detections = not draw_detections
@@ -1051,6 +1138,7 @@ def run_live(args) -> int:
             elif key in getattr(S, "KEY_TOGGLE_TRACKING", (ord("t"), ord("T"))):
                 tracking_enabled = not tracking_enabled
                 id_flicker_mitigator.reset()
+                adaptive_tuner.reset()
 
             elif key in getattr(S, "KEY_TOGGLE_POSE_MODE_OVERLAY", (ord("m"), ord("M"))):
                 pose_mode_overlay_on = not pose_mode_overlay_on
@@ -1077,6 +1165,7 @@ def run_live(args) -> int:
                     pose_smoother.reset()
                     world_smoother.reset()
                     id_flicker_mitigator.reset()
+                    adaptive_tuner.reset()
 
                 except Exception as e:
                     print("Toggle input failed:", e)
@@ -1087,6 +1176,7 @@ def run_live(args) -> int:
                     pose_smoother.reset()
                     world_smoother.reset()
                     id_flicker_mitigator.reset()
+                    adaptive_tuner.reset()
 
             elif key in getattr(S, "KEY_TOGGLE_MOTION_SMOOTHING", (ord("g"), ord("G"))):
                 new_enabled = not bool(pose_smoother.enabled)

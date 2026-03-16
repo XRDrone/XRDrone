@@ -102,6 +102,26 @@ class RobustIDFlickerMitigator:
         self._states: dict[int, _TrackContinuityState] = {}
         self._step = 0
 
+    def set_runtime_policy(
+        self,
+        *,
+        tau_on: float | None = None,
+        tau_off: float | None = None,
+        coast_frames: int | None = None,
+        coast_conf_decay: float | None = None,
+    ) -> None:
+        """Update runtime continuity controls with the same safety clamps as init."""
+        if tau_on is not None:
+            self.tau_on = _clamp01(tau_on)
+        if tau_off is not None:
+            upper = self.tau_on if tau_on is not None else self.tau_on
+            self.tau_off = _clamp01(min(float(tau_off), float(upper)))
+        if coast_frames is not None:
+            self.coast_frames = max(0, int(coast_frames))
+            self.drop_frames = max(int(self.drop_frames), self.coast_frames)
+        if coast_conf_decay is not None:
+            self.coast_conf_decay = _clamp01(coast_conf_decay)
+
     def reset(self) -> None:
         self._states.clear()
         self._step = 0

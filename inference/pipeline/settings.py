@@ -204,6 +204,33 @@ MOTION_SMOOTHING_RESET_TIMEOUT_S = 0.75
 WORLD_MOTION_SMOOTHING_MAX_TRACK_AGE_S = 1.50
 
 # -----------------------------
+# Adaptive runtime tuning
+# -----------------------------
+# Bounded runtime adaptation for smoothing + ID flicker mitigation only.
+# This does NOT change physical marker layout, Unity class mapping, the UDP schema,
+# or the structural ArUco solver-selection policy.
+ADAPTIVE_TUNING_ENABLED = True
+ADAPTIVE_TUNING_LOG_UPDATES = True
+ADAPTIVE_TUNING_TARGET_CLASSES = ("person",)
+ADAPTIVE_TUNING_WINDOW_FRAMES = 45
+ADAPTIVE_TUNING_UPDATE_INTERVAL_FRAMES = 15
+ADAPTIVE_TUNING_COOLDOWN_FRAMES = 30
+ADAPTIVE_TUNING_IOU_MATCH_THRESHOLD = 0.35
+
+ADAPTIVE_MOTION_SMOOTHING_MIN = 0.30
+ADAPTIVE_MOTION_SMOOTHING_MAX = 0.85
+ADAPTIVE_MOTION_SMOOTHING_STEP = 0.05
+
+ADAPTIVE_ID_TAU_ON_MIN = 0.75
+ADAPTIVE_ID_TAU_ON_MAX = 0.90
+ADAPTIVE_ID_TAU_OFF_MIN = 0.45
+ADAPTIVE_ID_TAU_OFF_MAX = 0.65
+ADAPTIVE_ID_TAU_STEP = 0.02
+ADAPTIVE_ID_COAST_FRAMES_MIN = 3
+ADAPTIVE_ID_COAST_FRAMES_MAX = 10
+ADAPTIVE_ID_COAST_STEP = 1
+
+# -----------------------------
 # Mask rendering
 # -----------------------------
 MASK_ALPHA = 0.35
