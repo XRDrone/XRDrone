@@ -1,234 +1,201 @@
-# Contributing Guide
 
-How to set up, code, test, review, and release so contributions meet our Definition of Done.
+# Contributing
 
-## Code of Conduct
+Thank you for contributing to this project. This document describes the current workflow for making changes,
+running the pipeline, and submitting pull requests.
 
-Project members will be expected to exhibit behavior as outlined in OSU's Code of Student Conduct  
-If any member fails to uphold this standard, please report the act to Student Community Standards  
-https://scs.oregonstate.edu/
-
-## Getting Started
-
-Prerequisites: 
-
-- Unity 6000.60f1 LTS 
-- Python 3.13.3   
-- python -m pip install -r requirements.txt # in inference/pipeline/requirements.txt
- 
-## Branching & Workflow
-
-Our GitHub workflow is trunk-based. The default branch is main.  
-Project member are expected to create a seperate branch and merge it with main at the end of each working day.  
-### Naming Conventions
-- feature/feature-name  
-- user/description  
-- bug/description  
-### Merge vs Rebase
-Members should only rebase their branch if an unrelated change has been made to main that does not conflict with their code.  
-Otherwise project members should merge.  
-
-## Project
-
-Maintain project in GitHub for easy tracking of issues and update for additional tasks/assignments.
-
-## Issues & Planning
-
-Explain how to file issues, required templates/labels, estimation, and triage/assignment practices.
-
-All work is tracked through **GitHub Issues** and organized into the **XRDrone Project Board** (`/projects/1`).
-
-Each issue **must use a template** and include description, scope, and acceptance criteria referencing requirements (e.g. `[REQ-003]`).
+The contribution process aligns with the repository documentation:
+- Setup instructions
+- UDP JSON protocol documentation
+- Testing procedures
+- Runtime configuration via settings
+- Python dependency environment
 
 ---
 
-#### Filing Issues
+# 1. Development Environment
 
-1) **Issues → New Issue → pick template**  
-   (Bug Report / Feature Request / Task)
+Follow the setup guide before contributing.
 
-2) Include:
+## Create environment
 
-| Field | Expectation |
-|---|---|
-| **Title** | short + action based (`“Reduce latency below 300 ms [REQ-003]”`) |
-| **Description** | concise problem summary + expected vs actual |
-| **Steps to Reproduce** | for bugs |
-| **Acceptance Criteria** | for features |
-| **Screenshots / Logs** | if relevant |
+```bash
+python3 -m venv yolovenv
+source yolovenv/bin/activate
+pip install -r requirements.txt
+```
 
----
+Some contributors may need CUDA builds of PyTorch. If CUDA support is required:
 
-#### Labels
-
-| Category | Examples |
-|---|---|
-| **type** | `type:bug`, `type:feature`, `type:task` |
-| **priority** | `prio:P0` (critical) → `P2` (minor) |
-| **area** | `area:stream`, `area:vision`, `area:hud`, `area:infra` |
-| **status** | `status:in-progress`, `status:blocked`, `status:review` |
+```bash
+pip uninstall torch torchvision torchaudio -y
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+```
 
 ---
 
-#### Estimation
+# 2. Repository Structure
 
-Effort levels:
+Key documentation files:
 
-| Code | Meaning |
-|---|---|
-| `S` | ≤ 1 day |
-| `M` | 2–3 days |
-| `L` | > 3 days |
+- `README.md` – high‑level project overview
+- `setup.md` – environment setup instructions
+- `testing.md` – pipeline testing procedures
+- `udp-json.md` – UDP packet schema used for Unity communication
+- `settings.md` – runtime configuration parameters
+- `requirements.txt` – Python dependencies
 
-Estimation is added by **assignee** and confirmed during **team review**.
+Developers should review these files before making structural changes.
 
 ---
 
-#### Triage & Assignment
+# 3. Development Guidelines
 
-- Weekly triage in **Friday team sync**
-- Blocked issues → escalate to mentor if 48h unresolved
-- Closed issues **must** link PR (`Closes #42`) and reference ≥1 requirement ID
+## Code Style
 
-## Commit Messages
+The repository uses:
 
-State the convention (e.g., Conventional Commits), include examples, and how to reference issues.
+- **Ruff** for linting
+- **Ruff format** for code formatting
+- Python virtual environments
 
-We use the **Conventional Commits** format to maintain clear traceability between commits, pull requests, and project requirements (REQ-001 – REQ-010).
+Run checks before committing:
 
-**Format:**  
-`<type>(<scope>): <short summary> [REQ-###]`
+```bash
+ruff check .
+ruff format .
+```
 
-**Common Types**
-- feat – new feature (e.g., streaming, detection, HUD)
-- fix – bug fix or patch
-- perf – performance or latency optimization
-- refactor – non-functional code rework
-- test – add or update tests
-- docs – documentation or diagrams
-- chore – maintenance or build updates
+---
 
-**Examples**
-- feat(stream): implement 720p video pipeline [REQ-001]
-- perf(stream): maintain ≥24 FPS target for Quest [REQ-002]
-- fix(latency): reduce glass-to-glass delay to ≤300 ms [REQ-003]
-- feat(vision): enable on-device detection for fire/smoke/humans [REQ-004]
-- perf(model): retrain YOLOv8 to reach ≥0.5 F1 on 150 frames [REQ-005]
-- docs(ethics): confirm no PII storage, opt-in recording only [REQ-006]
-- feat(hud): add altitude and position overlays in VR [REQ-007]
-- feat(hud): display FPS, latency, and battery metrics [REQ-008]
-- feat(vision): visually mark low-confidence detections [REQ-009]
-- fix(stability): auto-recover after forced disconnect [REQ-010]
+# 4. Branch Workflow
 
-**Referencing Issues**
-Include issue or PR links in the footer:
-- Closes #42
-- Relates to #57
+1. Create a feature branch
 
-## Code Style, Linting & Formatting
+```bash
+git checkout -b feature/your-feature
+```
 
-Name the formatter/linter, config file locations, and the exact commands to check/fix locally.
+2. Make your changes
 
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves. 
+3. Run linting and tests
 
-## Testing
+4. Commit changes
 
-Define required test types, how to run tests, expected coverage thresholds, and when new/updated tests are mandatory.
+```bash
+git add .
+git commit -m "Short descriptive message"
+```
 
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves. 
+5. Push branch
 
-## Pull Requests & Reviews
+```bash
+git push origin feature/your-feature
+```
 
-<details>
-<summary>PR Template</summary>
-PR Name
+6. Open a Pull Request
 
- Description  
- - Briefly describe the purpose of this pull request.
-  
- Related Issue  
- - Link to any related GitHub issue(s).
-  
- Testing  
- - Describe how you tested your changes (e.g., screenshots, logs, build output).
- 
- Checklist
- - [ ] Code builds and runs locally
- - [ ] Feature branch follows naming convention (feature/<description>)
- - [ ] Changes reviewed by at least one teammate
- - [ ] Documentation updated (if needed)
- - [ ] No sensitive data or credentials committed
-</details>
+---
 
+# 5. Testing Changes
 
-Reviewer Expectations:  
-Reviewers are expected to run the branch's code on their PC to make sure it is working correctly.  
-Reviewers are expected to provide a comment with a reason if they do not approve a PR.  
-Reviewers are expected to ensure the branch does not unintentionally remove items from the main branch.  
+Testing instructions are documented in `testing.md`.
 
-Approval Rules:  
-Pull Request reviewed by one member (besides the one who submitted it)
+Typical workflow:
 
-Required Status Checks:  
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves.
+1. Run the inference pipeline
+2. Verify UDP JSON packets are produced correctly
+3. Confirm Unity receives detections and pose data
+4. Validate object tracking and marker pose estimation
 
-## CI/CD
+When contributing algorithm changes (tracking, smoothing, pose solving),
+include a demonstration or reproduction method.
 
-Link to pipeline definitions, list mandatory jobs, how to view logs/re-run jobs, and what must pass before merge/release.
+---
 
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves.
+# 6. UDP JSON Protocol Changes
 
-## Security & Secrets
+Changes to the UDP schema must:
 
-Do NOT commit: 
+1. Be documented in `udp-json.md`
+2. Maintain backward compatibility when possible
+3. Include testing verification
 
-- .env files 
+Unity components rely on the schema remaining stable.
 
-- API keys (DJI, YOLO, etc.) 
+---
 
-Secrets go to GitHub Secrets. 
+# 7. Configuration Changes
 
-To report vulnerability: DM on Teams. 
+Runtime behavior is controlled by `settings.py`.
 
-## Documentation Expectations
+Examples include:
 
-Specify what must be updated (README, docs/, API refs, CHANGELOG) and docstring/comment standards.
+- detection thresholds
+- smoothing parameters
+- tracking configuration
+- pipeline behavior flags
 
-All contributions must include relevant documentation updates to keep the project reproducible and maintainable. Documentation changes are part of the Definition of Done and required before merge.
+If new configuration options are added:
 
-**What to Update**
-- README.md — add or revise setup steps, usage instructions, or build/run commands affected by your change
-- /docs/ directory — update design diagrams, architecture notes, or benchmark reports (latency, FPS, F1, etc.)
-- CHANGELOG.md — add an entry under the current release version describing user-facing changes
-- API references — update function/class documentation if new public interfaces are added or modified
+1. Document them in `settings.md`
+2. Provide default values
+3. Maintain backwards compatibility
 
-**Style Guidelines**
-- keep language concise and instructional  
-- document why and how — not just what  
-- ensure code snippets are executable or valid pseudocode  
-- update diagrams/logs in /docs/ whenever architecture, model, or performance metrics change
+---
 
-**Verification**
-- every PR must include a doc update if functionality, configuration, or metrics change  
-- reviewers verify that doc updates match the implemented behavior and that CHANGELOG entries follow version format:  
-  `## [X.Y.Z] – YYYY-MM-DD`
+# 8. Pull Request Requirements
 
-**Definition of Done**
-- Builds without errors
-- Meets requirement IDs
-- Tests pass
-- Documentation updated
-- Approved PR
+Before submitting a PR ensure:
 
-## Release Process
+- Code passes `ruff check`
+- Code is formatted (`ruff format`)
+- The pipeline runs without runtime errors
+- Documentation is updated if behavior changes
+- No unnecessary files are committed
 
-Describe versioning scheme, tagging, changelog generation, packaging/publishing steps, and rollback process.
+Do **not commit**:
 
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves. 
+- `.DS_Store`
+- `__pycache__/`
+- temporary media or test videos
+- local environment files
 
-## Support & Contact
+---
 
-Questions? Contact: 
-- Teams group chat 
-- GitHub Issues (tag as “question”) 
-- Typical response time: under 24 hours 
+# 9. Commit Message Guidelines
+
+Use concise, descriptive commit messages.
+
+Examples:
+
+```
+Add motion smoothing for ArUco pose updates
+Optimize UDP packet serialization
+Implement Bot‑Sort tracking integration
+Update documentation for pipeline testing
+```
+
+---
+
+# 10. Documentation Updates
+
+Documentation should remain synchronized with implementation.
+
+Update the following when needed:
+
+- `README.md`
+- `udp-json.md`
+- `testing.md`
+- `settings.md`
+- `setup.md`
+
+If a change alters the pipeline architecture or packet format,
+documentation updates are **required**.
+
+---
+
+# 11. Questions
+
+If unsure about architecture decisions or pipeline changes,
+open an issue before implementing major modifications.
