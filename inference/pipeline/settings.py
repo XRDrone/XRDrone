@@ -215,6 +215,14 @@ POSE_RANSAC_REPROJ_THRESHOLD_PX = 4.0
 POSE_RANSAC_CONFIDENCE = 0.99
 POSE_RANSAC_ITERATIONS = 100
 
+# Explicit pose-loss fallback when no known marker corners are visible.
+# During the short hold timeout, the last valid pose numbers are preserved,
+# but pose_valid remains False and registration stays unavailable.
+POSE_LOSS_HOLD_ENABLED_DEFAULT = True
+POSE_LOSS_HOLD_TIMEOUT_S = 0.35
+POSE_LOSS_PRESERVE_LAST_NUMBERS_DURING_HOLD = True
+POSE_LOSS_CLEAR_NUMBERS_AFTER_TIMEOUT = True
+
 # If True, draw detected ArUco markers on the output frame.
 POSE_DRAW_ARUCO = False
 

@@ -656,6 +656,14 @@ def run_test(args) -> int:
         ransac_reproj_threshold_px=float(getattr(S, "POSE_RANSAC_REPROJ_THRESHOLD_PX", 4.0)),
         ransac_confidence=float(getattr(S, "POSE_RANSAC_CONFIDENCE", 0.99)),
         ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
+        pose_loss_hold_enabled=bool(getattr(S, "POSE_LOSS_HOLD_ENABLED_DEFAULT", True)),
+        pose_loss_hold_timeout_s=float(getattr(S, "POSE_LOSS_HOLD_TIMEOUT_S", 0.35)),
+        pose_loss_preserve_last_numbers_during_hold=bool(
+            getattr(S, "POSE_LOSS_PRESERVE_LAST_NUMBERS_DURING_HOLD", True)
+        ),
+        pose_loss_clear_numbers_after_timeout=bool(
+            getattr(S, "POSE_LOSS_CLEAR_NUMBERS_AFTER_TIMEOUT", True)
+        ),
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
     pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
@@ -785,6 +793,14 @@ def run_live(args) -> int:
         ransac_reproj_threshold_px=float(getattr(S, "POSE_RANSAC_REPROJ_THRESHOLD_PX", 4.0)),
         ransac_confidence=float(getattr(S, "POSE_RANSAC_CONFIDENCE", 0.99)),
         ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
+        pose_loss_hold_enabled=bool(getattr(S, "POSE_LOSS_HOLD_ENABLED_DEFAULT", True)),
+        pose_loss_hold_timeout_s=float(getattr(S, "POSE_LOSS_HOLD_TIMEOUT_S", 0.35)),
+        pose_loss_preserve_last_numbers_during_hold=bool(
+            getattr(S, "POSE_LOSS_PRESERVE_LAST_NUMBERS_DURING_HOLD", True)
+        ),
+        pose_loss_clear_numbers_after_timeout=bool(
+            getattr(S, "POSE_LOSS_CLEAR_NUMBERS_AFTER_TIMEOUT", True)
+        ),
     )
     pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
     pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))

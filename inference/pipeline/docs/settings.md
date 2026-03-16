@@ -155,6 +155,10 @@ These settings control ArUco-based camera pose estimation and the `pose` object 
 | `POSE_MODE_OVERLAY_ORIGIN` | On-screen position of the pose mode overlay. |
 | `POSE_MODE_OVERLAY_TEXT_SCALE` | Text size for the pose mode overlay. |
 | `POSE_MODE_OVERLAY_TEXT_THICKNESS` | Text thickness for the pose mode overlay. |
+| `POSE_LOSS_HOLD_ENABLED_DEFAULT` | If `True`, enables the pose-loss fallback when no valid marker corners are visible. |
+| `POSE_LOSS_HOLD_TIMEOUT_S` | How long the last valid pose numbers may be retained during full marker occlusion before the hold expires. |
+| `POSE_LOSS_PRESERVE_LAST_NUMBERS_DURING_HOLD` | If `True`, keeps the last valid numeric pose values during the short pose-loss hold window while still marking the pose invalid. |
+| `POSE_LOSS_CLEAR_NUMBERS_AFTER_TIMEOUT` | If `True`, clears the retained numeric pose values after the pose-loss hold timeout expires. |
 
 ## Motion Smoothing
 

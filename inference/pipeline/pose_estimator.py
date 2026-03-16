@@ -28,6 +28,7 @@ used to project image pixels to the ground plane (Y=0) via ray-plane intersectio
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -196,6 +197,10 @@ class ArucoPoseEstimator:
     ransac_reproj_threshold_px: float = 4.0
     ransac_confidence: float = 0.99
     ransac_iterations: int = 100
+    pose_loss_hold_enabled: bool = True
+    pose_loss_hold_timeout_s: float = 0.35
+    pose_loss_preserve_last_numbers_during_hold: bool = True
+    pose_loss_clear_numbers_after_timeout: bool = True
 
     def __post_init__(self) -> None:
         self.enabled = bool(self.enabled)
@@ -212,6 +217,14 @@ class ArucoPoseEstimator:
         self.ransac_reproj_threshold_px = max(0.1, float(self.ransac_reproj_threshold_px))
         self.ransac_confidence = min(max(float(self.ransac_confidence), 0.0), 1.0)
         self.ransac_iterations = max(1, int(self.ransac_iterations))
+        self.pose_loss_hold_enabled = bool(self.pose_loss_hold_enabled)
+        self.pose_loss_hold_timeout_s = max(0.0, float(self.pose_loss_hold_timeout_s))
+        self.pose_loss_preserve_last_numbers_during_hold = bool(
+            self.pose_loss_preserve_last_numbers_during_hold
+        )
+        self.pose_loss_clear_numbers_after_timeout = bool(
+            self.pose_loss_clear_numbers_after_timeout
+        )
 
         if self.use_case not in VALID_POSE_USE_CASES:
             self.use_case = "auto"
@@ -233,6 +246,8 @@ class ArucoPoseEstimator:
         self._last_visible_known_markers = 0
         self._last_selected_mode = "none"
         self._last_overlay_text = "ArUco: no known markers"
+        self._last_valid_pose_timestamp_s: float | None = None
+        self._last_valid_pose_solution: PoseSolution | None = None
 
         self._aruco = None
         self._dict = None
@@ -269,22 +284,61 @@ class ArucoPoseEstimator:
         except Exception:
             self._detector = None
 
-    def default_pose(self) -> dict[str, Any]:
-        """
-        Return a pose dict in the required UDP schema.
-        Always returns pose_valid=False and markers_used=0.
-        """
+    def _zero_pose_numbers(self) -> dict[str, float]:
+        """Return a cleared set of numeric pose fields without changing the UDP schema."""
         return {
-            "x": float(self._last_pose_numbers["x"]),
-            "altitude": float(self._last_pose_numbers["altitude"]),
-            "z": float(self._last_pose_numbers["z"]),
-            "yaw": float(self._last_pose_numbers["yaw"]),
-            "pitch": float(self._last_pose_numbers["pitch"]),
-            "roll": float(self._last_pose_numbers["roll"]),
+            "x": 0.0,
+            "altitude": 0.0,
+            "z": 0.0,
+            "yaw": 0.0,
+            "pitch": 0.0,
+            "roll": 0.0,
+        }
+
+    def default_pose(self, *, preserve_last_pose_numbers: bool = True) -> dict[str, Any]:
+        """
+        Return an invalid pose dict in the required UDP schema.
+
+        When preserve_last_pose_numbers is True, the numeric pose fields reuse the
+        most recent valid pose for a short pose-loss hold window. When False, the
+        numeric pose fields are cleared to zero.
+        """
+        pose_numbers = (
+            self._last_pose_numbers if preserve_last_pose_numbers else self._zero_pose_numbers()
+        )
+        return {
+            "x": float(pose_numbers["x"]),
+            "altitude": float(pose_numbers["altitude"]),
+            "z": float(pose_numbers["z"]),
+            "yaw": float(pose_numbers["yaw"]),
+            "pitch": float(pose_numbers["pitch"]),
+            "roll": float(pose_numbers["roll"]),
             "hfov": float(self.hfov_deg),
             "markers_used": 0,
             "pose_valid": False,
         }
+
+    def _resolve_pose_loss_hold(self) -> bool:
+        """Return True when the last valid pose is still within the short hold timeout."""
+        if not self.pose_loss_hold_enabled:
+            return False
+        if not self.pose_loss_preserve_last_numbers_during_hold:
+            return False
+        if self._last_valid_pose_timestamp_s is None:
+            return False
+
+        elapsed = time.monotonic() - float(self._last_valid_pose_timestamp_s)
+        return elapsed <= self.pose_loss_hold_timeout_s
+
+    def _enter_pose_loss_state(self) -> tuple[dict[str, Any], None]:
+        """Return the explicit pose-loss fallback without exposing stale registration."""
+        holding = self._resolve_pose_loss_hold()
+        preserve_numbers = holding or not self.pose_loss_clear_numbers_after_timeout
+
+        self._last_visible_known_markers = 0
+        self._last_selected_mode = "pose_lost_hold" if holding else "pose_lost"
+        self._last_overlay_text = "ArUco: pose lost | holding" if holding else "ArUco: pose lost"
+        return self.default_pose(preserve_last_pose_numbers=preserve_numbers), None
 
     def estimate(self, frame_bgr: np.ndarray, *, draw: bool = False) -> dict[str, Any]:
         """Backwards-compatible API: returns pose dict only."""
@@ -316,17 +370,17 @@ class ArucoPoseEstimator:
         pose_solution is optional and contains (K, R_wc, C_w) for 3D registration.
         """
         if not self.enabled:
-            return self.default_pose(), None
+            return self.default_pose(preserve_last_pose_numbers=False), None
 
         if cv2 is None or self._aruco is None or self._dict is None:
-            return self.default_pose(), None
+            return self.default_pose(preserve_last_pose_numbers=False), None
 
         if frame_bgr is None:
-            return self.default_pose(), None
+            return self.default_pose(preserve_last_pose_numbers=False), None
 
         h, w = frame_bgr.shape[:2]
         if h <= 0 or w <= 0:
-            return self.default_pose(), None
+            return self.default_pose(preserve_last_pose_numbers=False), None
 
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
@@ -338,11 +392,11 @@ class ArucoPoseEstimator:
                     gray, self._dict, parameters=self._params
                 )
         except Exception:
-            return self.default_pose(), None
+            return self.default_pose(preserve_last_pose_numbers=False), None
 
         if ids is None or len(ids) == 0:
             self._update_marker_status(0, "none")
-            return self.default_pose(), None
+            return self._enter_pose_loss_state()
 
         if draw:
             try:
@@ -352,7 +406,11 @@ class ArucoPoseEstimator:
 
         out = self._estimate_from_markers(corners, ids, width=w, height=h)
         if out is None:
-            return self.default_pose(), None
+            if self._last_visible_known_markers <= 0:
+                return self._enter_pose_loss_state()
+
+            self._last_overlay_text += " | pose unavailable"
+            return self.default_pose(preserve_last_pose_numbers=False), None
 
         pose, sol = out
 
@@ -366,6 +424,8 @@ class ArucoPoseEstimator:
                 "roll": float(pose["roll"]),
             }
         )
+        self._last_valid_pose_timestamp_s = time.monotonic()
+        self._last_valid_pose_solution = sol
 
         return pose, sol
 
