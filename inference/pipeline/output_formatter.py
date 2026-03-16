@@ -39,7 +39,8 @@ Optional internal helper fields are also supported:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 
 def _clamp01(x: float) -> float:
@@ -52,7 +53,7 @@ def _clamp01(x: float) -> float:
 
 def _xyxy_to_xywhn(
     x1: float, y1: float, x2: float, y2: float, width: float, height: float
-) -> Tuple[float, float, float, float]:
+) -> tuple[float, float, float, float]:
     # Convert pixel xyxy -> normalized cx,cy,w,h in [0,1]
     w = max(0.0, x2 - x1)
     h = max(0.0, y2 - y1)
@@ -71,16 +72,16 @@ def _xyxy_to_xywhn(
 
 
 def to_unity_udp_packet(
-    merged_detections: Sequence[Dict[str, Any]],
+    merged_detections: Sequence[dict[str, Any]],
     *,
     frame_id: int,
     timestamp: float,
     width: int,
     height: int,
-    class_map: Optional[Mapping[str, int]] = None,
-    allowed_classes: Optional[Sequence[str]] = None,
-    min_conf: Optional[float] = None,
-) -> Dict[str, Any]:
+    class_map: Mapping[str, int] | None = None,
+    allowed_classes: Sequence[str] | None = None,
+    min_conf: float | None = None,
+) -> dict[str, Any]:
     """
     Convert merger.merge_detections output into the UDP schema used by Unity:
       {
@@ -101,7 +102,7 @@ def to_unity_udp_packet(
     allow = set(c.lower() for c in allowed_classes) if allowed_classes else None
     min_conf_f = float(min_conf) if min_conf is not None else None
 
-    dets: List[Dict[str, Any]] = []
+    dets: list[dict[str, Any]] = []
     for i, det in enumerate(merged_detections):
         cls_name = str(det.get("class") or det.get("class_name") or "").lower()
         if allow is not None and cls_name not in allow:

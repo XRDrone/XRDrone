@@ -51,13 +51,12 @@ import socket
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import settings as S
 from output_formatter import to_unity_udp_packet
 from streaming import UDPPublisher
-
 
 EXPECTED_TOP_LEVEL_KEYS = {
     "frame_id",
@@ -97,7 +96,7 @@ EXPECTED_POSE_KEYS = {
 }
 
 
-def _assert_exact_keys(obj: Dict[str, Any], expected: set[str], label: str) -> None:
+def _assert_exact_keys(obj: dict[str, Any], expected: set[str], label: str) -> None:
     actual = set(obj.keys())
     missing = sorted(expected - actual)
     extra = sorted(actual - expected)
@@ -117,14 +116,14 @@ def _assert_type(value: Any, types: Any, label: str) -> None:
 
 
 def _assert_number_range(value: Any, lo: float, hi: float, label: str) -> None:
-    if not isinstance(value, (int, float)):
+    if not isinstance(value, int | float):
         raise AssertionError(f"{label} must be numeric")
     value_f = float(value)
     if value_f < lo or value_f > hi:
         raise AssertionError(f"{label} out of range [{lo}, {hi}]: {value}")
 
 
-def _validate_top_level(pkt: Dict[str, Any]) -> None:
+def _validate_top_level(pkt: dict[str, Any]) -> None:
     _assert_exact_keys(pkt, EXPECTED_TOP_LEVEL_KEYS, "top-level packet")
 
     _assert_type(pkt["frame_id"], int, "frame_id")
@@ -138,7 +137,7 @@ def _validate_top_level(pkt: Dict[str, Any]) -> None:
         raise AssertionError("width and height must be positive")
 
 
-def _validate_detection(det: Dict[str, Any], index: int) -> None:
+def _validate_detection(det: dict[str, Any], index: int) -> None:
     prefix = f"detections[{index}]"
     _assert_exact_keys(det, EXPECTED_DETECTION_KEYS, prefix)
 
@@ -156,7 +155,7 @@ def _validate_detection(det: Dict[str, Any], index: int) -> None:
         _assert_type(det[key], (int, float), f"{prefix}.{key}")
 
 
-def _validate_pose(pose: Dict[str, Any]) -> None:
+def _validate_pose(pose: dict[str, Any]) -> None:
     _assert_exact_keys(pose, EXPECTED_POSE_KEYS, "pose")
 
     for key in ("x", "altitude", "z", "yaw", "pitch", "roll", "hfov"):
@@ -169,7 +168,7 @@ def _validate_pose(pose: Dict[str, Any]) -> None:
         raise AssertionError("pose.markers_used must be non-negative")
 
 
-def _validate_packet(pkt: Dict[str, Any]) -> None:
+def _validate_packet(pkt: dict[str, Any]) -> None:
     _validate_top_level(pkt)
 
     for i, det in enumerate(pkt["detections"]):
@@ -180,7 +179,7 @@ def _validate_packet(pkt: Dict[str, Any]) -> None:
     _validate_pose(pkt["pose"])
 
 
-def _build_sample_packet() -> Dict[str, Any]:
+def _build_sample_packet() -> dict[str, Any]:
     width = 1920
     height = 1080
 
@@ -225,7 +224,7 @@ def _build_sample_packet() -> Dict[str, Any]:
     return pkt
 
 
-def _recv_json_packet(sock: socket.socket, timeout_s: float) -> Dict[str, Any]:
+def _recv_json_packet(sock: socket.socket, timeout_s: float) -> dict[str, Any]:
     pkt, _data, _arrival = _recv_json_packet_with_meta(sock, timeout_s)
     return pkt
 
@@ -233,7 +232,7 @@ def _recv_json_packet(sock: socket.socket, timeout_s: float) -> Dict[str, Any]:
 def _recv_json_packet_with_meta(
     sock: socket.socket,
     timeout_s: float,
-) -> Tuple[Dict[str, Any], bytes, float]:
+) -> tuple[dict[str, Any], bytes, float]:
     sock.settimeout(float(timeout_s))
     data, _addr = sock.recvfrom(65535)
     arrival_ts = time.time()
@@ -241,12 +240,12 @@ def _recv_json_packet_with_meta(
     try:
         text = data.decode("utf-8")
     except Exception as e:
-        raise AssertionError(f"UDP payload is not valid UTF-8 JSON: {e}")
+        raise AssertionError(f"UDP payload is not valid UTF-8 JSON: {e}") from e
 
     try:
         obj = json.loads(text)
     except Exception as e:
-        raise AssertionError(f"UDP payload is not valid JSON: {e}")
+        raise AssertionError(f"UDP payload is not valid JSON: {e}") from e
 
     if not isinstance(obj, dict):
         raise AssertionError("UDP payload JSON root must be an object")
@@ -341,13 +340,13 @@ def _test_live_udp_packets(
         )
 
 
-def _safe_mean(values: List[float]) -> float:
+def _safe_mean(values: list[float]) -> float:
     if not values:
         return 0.0
     return float(sum(values) / len(values))
 
 
-def _safe_std(values: List[float]) -> float:
+def _safe_std(values: list[float]) -> float:
     if len(values) < 2:
         return 0.0
     mu = _safe_mean(values)
@@ -370,8 +369,8 @@ def _class_name_from_id(cls_id: Any) -> str:
     return ""
 
 
-def _person_detections(pkt: Dict[str, Any]) -> List[Dict[str, float]]:
-    out: List[Dict[str, float]] = []
+def _person_detections(pkt: dict[str, Any]) -> list[dict[str, float]]:
+    out: list[dict[str, float]] = []
     detections = pkt.get("detections", [])
     if not isinstance(detections, list):
         return out
@@ -396,8 +395,8 @@ def _person_detections(pkt: Dict[str, Any]) -> List[Dict[str, float]]:
 
 
 def _estimate_id_switches(
-    prev_people: List[Dict[str, float]],
-    cur_people: List[Dict[str, float]],
+    prev_people: list[dict[str, float]],
+    cur_people: list[dict[str, float]],
     max_dist: float = 0.08,
 ) -> int:
     if not prev_people or not cur_people:
@@ -430,7 +429,7 @@ def _estimate_id_switches(
     return switches
 
 
-def _estimate_video_total_packets(video_path: str) -> Optional[int]:
+def _estimate_video_total_packets(video_path: str) -> int | None:
     cap = cv2.VideoCapture(video_path)
     try:
         if not cap.isOpened():
@@ -448,7 +447,7 @@ def _estimate_video_total_packets(video_path: str) -> Optional[int]:
 
 def _print_progress(
     current: int,
-    total: Optional[int] = None,
+    total: int | None = None,
     *,
     prefix: str = "Progress",
     width: int = 32,
@@ -475,10 +474,10 @@ def _collect_udp_stats(
     port: int,
     packets_needed: int,
     timeout_s: float,
-    stop_event: Optional[threading.Event] = None,
-    progress_total: Optional[int] = None,
+    stop_event: threading.Event | None = None,
+    progress_total: int | None = None,
     progress_prefix: str = "Stats",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.bind((host, int(port)))
@@ -486,19 +485,19 @@ def _collect_udp_stats(
 
         valid_packets = 0
         invalid_packets = 0
-        packet_sizes: List[int] = []
-        source_dt_values: List[float] = []
-        arrival_dt_values: List[float] = []
+        packet_sizes: list[int] = []
+        source_dt_values: list[float] = []
+        arrival_dt_values: list[float] = []
 
         frame_gaps = 0
         duplicate_frames = 0
         out_of_order_frames = 0
         person_id_switches_est = 0
 
-        prev_frame_id: Optional[int] = None
-        prev_source_ts: Optional[float] = None
-        prev_arrival_ts: Optional[float] = None
-        prev_people: List[Dict[str, float]] = []
+        prev_frame_id: int | None = None
+        prev_source_ts: float | None = None
+        prev_arrival_ts: float | None = None
+        prev_people: list[dict[str, float]] = []
 
         last_progress_time = 0.0
 
@@ -511,7 +510,7 @@ def _collect_udp_stats(
             try:
                 pkt, raw_bytes, arrival_ts = _recv_json_packet_with_meta(sock, timeout_s)
                 _validate_packet(pkt)
-            except socket.timeout:
+            except TimeoutError:
                 if stop_event is not None and stop_event.is_set():
                     break
                 continue
@@ -598,7 +597,7 @@ def _collect_udp_stats(
             pass
 
 
-def _print_stats(stats: Dict[str, Any]) -> None:
+def _print_stats(stats: dict[str, Any]) -> None:
     print(
         "STATS: "
         f"valid_packets={stats['valid_packets']}, "
@@ -640,9 +639,9 @@ def _collect_video_stats(
     host: str,
     port: int,
     timeout_s: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     stop_event = threading.Event()
-    pipeline_result: Dict[str, Any] = {"code": None, "error": None}
+    pipeline_result: dict[str, Any] = {"code": None, "error": None}
 
     def _pipeline_target() -> None:
         try:
@@ -741,7 +740,10 @@ def main() -> int:
                 port=args.port,
                 timeout_s=args.timeout,
             )
-            print("PASSED: UDP formatter structure, UDP send/receive, and video stats collection are valid")
+            print(
+                "PASSED: UDP formatter structure, UDP send/receive, "
+                "and video stats collection are valid"
+            )
             _print_stats(stats)
 
         elif args.stats:
@@ -753,7 +755,9 @@ def main() -> int:
                 progress_total=args.packets,
                 progress_prefix="Stats",
             )
-            print("PASSED: UDP formatter structure, UDP send/receive, and stats collection are valid")
+            print(
+                "PASSED: UDP formatter structure, UDP send/receive, and stats collection are valid"
+            )
             _print_stats(stats)
 
         elif args.live:

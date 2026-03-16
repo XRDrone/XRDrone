@@ -28,8 +28,9 @@ used to project image pixels to the ground plane (Y=0) via ray-plane intersectio
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -53,7 +54,7 @@ def _as_float3(v) -> np.ndarray:
     return a[:3].astype(np.float64)
 
 
-def _hfov_camera_matrix(width: int, height: int, hfov_deg: float) -> Tuple[np.ndarray, np.ndarray]:
+def _hfov_camera_matrix(width: int, height: int, hfov_deg: float) -> tuple[np.ndarray, np.ndarray]:
     """Approximate camera intrinsics from HFOV. Returns (K, dist_coeffs)."""
     w = max(1, int(width))
     h = max(1, int(height))
@@ -83,7 +84,7 @@ def _marker_object_points(size_m: float) -> np.ndarray:
     )
 
 
-def _ypr_from_R_wc(R_wc: np.ndarray) -> Tuple[float, float, float]:
+def _ypr_from_R_wc(R_wc: np.ndarray) -> tuple[float, float, float]:
     """
     Convert rotation matrix (world->camera) into (yaw, pitch, roll) degrees.
 
@@ -117,8 +118,8 @@ class PoseSolution:
     C_w: np.ndarray  # (3,) camera position in world
     R_wc: np.ndarray  # (3,3) rotation from world -> camera
     K: np.ndarray  # (3,3) intrinsics
-    K_inv: Optional[np.ndarray] = None  # (3,3) cached intrinsics inverse
-    R_cw: Optional[np.ndarray] = None  # (3,3) rotation from camera -> world
+    K_inv: np.ndarray | None = None  # (3,3) cached intrinsics inverse
+    R_cw: np.ndarray | None = None  # (3,3) rotation from camera -> world
 
     def __post_init__(self) -> None:
         try:
@@ -131,7 +132,7 @@ class PoseSolution:
         except Exception:
             object.__setattr__(self, "R_cw", None)
 
-    def pixel_ray_in_world(self, u_px: float, v_px: float) -> Optional[np.ndarray]:
+    def pixel_ray_in_world(self, u_px: float, v_px: float) -> np.ndarray | None:
         """Back-project a pixel into a unit direction vector in world coordinates."""
         if self.K_inv is None or self.R_cw is None:
             return None
@@ -148,7 +149,9 @@ class PoseSolution:
             return None
         return d_w / norm_w
 
-    def intersect_plane_y0(self, u_px: float, v_px: float, *, eps: float = 1e-8) -> Optional[np.ndarray]:
+    def intersect_plane_y0(
+        self, u_px: float, v_px: float, *, eps: float = 1e-8
+    ) -> np.ndarray | None:
         """Intersect pixel ray with plane Y=0; returns world point or None."""
         d_w = self.pixel_ray_in_world(u_px, v_px)
         if d_w is None:
@@ -181,7 +184,7 @@ class ArucoPoseEstimator:
     enabled: bool = True
     hfov_deg: float = 84.0
     marker_size_m: float = 0.1645
-    marker_world_positions: Optional[Mapping[int, Any]] = None
+    marker_world_positions: Mapping[int, Any] | None = None
     aruco_dict_name: str = "DICT_4X4_50"
     use_case: str = "auto"
     single_init_solver: str = "ippe_square"
@@ -266,7 +269,7 @@ class ArucoPoseEstimator:
         except Exception:
             self._detector = None
 
-    def default_pose(self) -> Dict[str, Any]:
+    def default_pose(self) -> dict[str, Any]:
         """
         Return a pose dict in the required UDP schema.
         Always returns pose_valid=False and markers_used=0.
@@ -283,7 +286,7 @@ class ArucoPoseEstimator:
             "pose_valid": False,
         }
 
-    def estimate(self, frame_bgr: np.ndarray, *, draw: bool = False) -> Dict[str, Any]:
+    def estimate(self, frame_bgr: np.ndarray, *, draw: bool = False) -> dict[str, Any]:
         """Backwards-compatible API: returns pose dict only."""
         pose, _sol = self.estimate_with_solution(frame_bgr, draw=draw)
         return pose
@@ -302,7 +305,7 @@ class ArucoPoseEstimator:
 
     def estimate_with_solution(
         self, frame_bgr: np.ndarray, *, draw: bool = False
-    ) -> Tuple[Dict[str, Any], Optional[PoseSolution]]:
+    ) -> tuple[dict[str, Any], PoseSolution | None]:
         """
         Estimate pose for the provided frame.
 
@@ -331,7 +334,9 @@ class ArucoPoseEstimator:
             if self._detector is not None:
                 corners, ids, _rej = self._detector.detectMarkers(gray)
             else:
-                corners, ids, _rej = self._aruco.detectMarkers(gray, self._dict, parameters=self._params)
+                corners, ids, _rej = self._aruco.detectMarkers(
+                    gray, self._dict, parameters=self._params
+                )
         except Exception:
             return self.default_pose(), None
 
@@ -388,7 +393,7 @@ class ArucoPoseEstimator:
 
     def _estimate_from_markers(
         self, corners, ids, *, width: int, height: int
-    ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
+    ) -> tuple[dict[str, Any], PoseSolution] | None:
         """Dispatch to the configured single- or multi-marker pose path."""
         if cv2 is None:
             return None
@@ -455,11 +460,11 @@ class ArucoPoseEstimator:
             return "multi_marker_board"
         return "single_marker"
 
-    def _collect_observations(self, corners, ids) -> List[MarkerObservation]:
+    def _collect_observations(self, corners, ids) -> list[MarkerObservation]:
         """Convert known detected markers into 3D/2D correspondence groups."""
         marker_world = self.marker_world_positions or {0: (0.0, 0.0, 0.0)}
         base_pts = _marker_object_points(self.marker_size_m)
-        out: List[MarkerObservation] = []
+        out: list[MarkerObservation] = []
 
         try:
             flat_ids = ids.flatten()
@@ -494,7 +499,9 @@ class ArucoPoseEstimator:
 
         return out
 
-    def _select_best_single_marker(self, observations: List[MarkerObservation]) -> Optional[MarkerObservation]:
+    def _select_best_single_marker(
+        self, observations: list[MarkerObservation]
+    ) -> MarkerObservation | None:
         """Choose the strongest single visible marker for single-marker pose solving."""
         if not observations:
             return None
@@ -502,14 +509,18 @@ class ArucoPoseEstimator:
 
     def _solve_single_marker(
         self, observation: MarkerObservation, K: np.ndarray, dist: np.ndarray
-    ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
+    ) -> tuple[dict[str, Any], PoseSolution] | None:
         """Solve pose from one square marker using the configured single-marker initializer."""
         solver = self.single_init_solver
         if solver == "ransac":
-            ok, rvec, tvec = self._solve_pnp_ransac(observation.object_points, observation.image_points, K, dist)
+            ok, rvec, tvec = self._solve_pnp_ransac(
+                observation.object_points, observation.image_points, K, dist
+            )
         else:
             flag_name = "SOLVEPNP_IPPE_SQUARE" if solver == "ippe_square" else "SOLVEPNP_ITERATIVE"
-            ok, rvec, tvec = self._solve_pnp(observation.object_points, observation.image_points, K, dist, flag_name)
+            ok, rvec, tvec = self._solve_pnp(
+                observation.object_points, observation.image_points, K, dist, flag_name
+            )
 
         if not ok or rvec is None or tvec is None:
             if solver == "ippe_square":
@@ -523,18 +534,24 @@ class ArucoPoseEstimator:
             if not ok or rvec is None or tvec is None:
                 return None
 
-        rvec, tvec = self._refine_pose(observation.object_points, observation.image_points, K, dist, rvec, tvec)
+        rvec, tvec = self._refine_pose(
+            observation.object_points, observation.image_points, K, dist, rvec, tvec
+        )
         return self._build_pose_result(rvec, tvec, K, markers_used=1)
 
     def _solve_multi_marker_board(
-        self, observations: List[MarkerObservation], K: np.ndarray, dist: np.ndarray
-    ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
+        self, observations: list[MarkerObservation], K: np.ndarray, dist: np.ndarray
+    ) -> tuple[dict[str, Any], PoseSolution] | None:
         """Solve pose from all visible markers together as one known-layout board."""
         if len(observations) < self.min_markers_for_multi:
             return None
 
-        object_points = np.concatenate([obs.object_points for obs in observations], axis=0).astype(np.float64)
-        image_points = np.concatenate([obs.image_points for obs in observations], axis=0).astype(np.float64)
+        object_points = np.concatenate([obs.object_points for obs in observations], axis=0).astype(
+            np.float64
+        )
+        image_points = np.concatenate([obs.image_points for obs in observations], axis=0).astype(
+            np.float64
+        )
 
         solver = self.multi_init_solver
         if solver == "ransac":
@@ -572,7 +589,7 @@ class ArucoPoseEstimator:
         K: np.ndarray,
         dist: np.ndarray,
         flag_name: str,
-    ) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
+    ) -> tuple[bool, np.ndarray | None, np.ndarray | None]:
         """Thin wrapper around cv2.solvePnP with a named OpenCV solver flag."""
         if cv2 is None:
             return False, None, None
@@ -604,7 +621,7 @@ class ArucoPoseEstimator:
         image_points: np.ndarray,
         K: np.ndarray,
         dist: np.ndarray,
-    ) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
+    ) -> tuple[bool, np.ndarray | None, np.ndarray | None]:
         """Thin wrapper around cv2.solvePnPRansac for outlier-robust initialization."""
         if cv2 is None or not hasattr(cv2, "solvePnPRansac"):
             return False, None, None
@@ -636,7 +653,7 @@ class ArucoPoseEstimator:
         dist: np.ndarray,
         rvec: np.ndarray,
         tvec: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Optionally refine pose while preserving the UDP output schema."""
         if cv2 is None or not self.enable_refinement or self.refiner == "none":
             return rvec, tvec
@@ -667,7 +684,7 @@ class ArucoPoseEstimator:
 
     def _build_pose_result(
         self, rvec: np.ndarray, tvec: np.ndarray, K: np.ndarray, *, markers_used: int
-    ) -> Optional[Tuple[Dict[str, Any], PoseSolution]]:
+    ) -> tuple[dict[str, Any], PoseSolution] | None:
         """Convert OpenCV pose vectors into the existing UDP pose schema."""
         if cv2 is None:
             return None
@@ -699,5 +716,7 @@ class ArucoPoseEstimator:
             "pose_valid": True,
         }
 
-        sol = PoseSolution(C_w=C_w.astype(np.float64), R_wc=R_wc.astype(np.float64), K=K.astype(np.float64))
+        sol = PoseSolution(
+            C_w=C_w.astype(np.float64), R_wc=R_wc.astype(np.float64), K=K.astype(np.float64)
+        )
         return pose, sol

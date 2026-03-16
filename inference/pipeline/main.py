@@ -29,15 +29,13 @@ import argparse
 import json
 import time
 from collections import deque
+from collections.abc import Sequence
 from types import SimpleNamespace
-from typing import Dict, List, Optional, Sequence
 
 import cv2
 import numpy as np
-import torch
-from ultralytics import YOLO
-
 import settings as S
+import torch
 from id_flicker_mitigation import RobustIDFlickerMitigator
 from merger import merge_detections
 from motion_smoothing import PoseMotionSmoother, WorldTrackSmoother
@@ -46,6 +44,7 @@ from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
 from pose_estimator import ArucoPoseEstimator, PoseSolution
 from streaming import UDPPublisher
 from tracker import OpenCVKalmanIOUTracker
+from ultralytics import YOLO
 
 
 def draw_pose_mode_status(
@@ -95,12 +94,12 @@ def draw_pose_mode_status(
 def _normalize_names(names):
     if isinstance(names, dict):
         return {int(k): str(v) for k, v in names.items()}
-    if isinstance(names, (list, tuple)):
+    if isinstance(names, list | tuple):
         return {i: str(v) for i, v in enumerate(names)}
     return {}
 
 
-def _remap_people_names(names_dict: Dict[int, str]) -> Dict[int, str]:
+def _remap_people_names(names_dict: dict[int, str]) -> dict[int, str]:
     """Normalize common custom-label variants to COCO-like labels when possible."""
     names = dict(names_dict)
     inv = {v.lower(): k for k, v in names.items()}
@@ -114,7 +113,7 @@ def _remap_people_names(names_dict: Dict[int, str]) -> Dict[int, str]:
     return names
 
 
-def _find_class_idx(names_dict: Dict[int, str], want: str):
+def _find_class_idx(names_dict: dict[int, str], want: str):
     want = (want or "").lower()
     for k, v in names_dict.items():
         if str(v).lower() == want:
@@ -122,7 +121,7 @@ def _find_class_idx(names_dict: Dict[int, str], want: str):
     return None
 
 
-def _resolve_class_ids(names_dict: Dict[int, str], wanted_names: Sequence[str]) -> List[int]:
+def _resolve_class_ids(names_dict: dict[int, str], wanted_names: Sequence[str]) -> list[int]:
     """Resolve human-friendly class names to model class IDs, with a few aliases."""
     inv = {str(v).lower(): int(k) for k, v in names_dict.items()}
 
@@ -132,7 +131,7 @@ def _resolve_class_ids(names_dict: Dict[int, str], wanted_names: Sequence[str]) 
         "diningtable": "dining table",
     }
 
-    ids: List[int] = []
+    ids: list[int] = []
     for raw in wanted_names:
         name = str(raw).strip().lower()
         if name in inv:
@@ -300,9 +299,9 @@ def draw_masks(
                         interpolation=cv2.INTER_NEAREST,
                     )
                 m = m > 0.5
-                frame[m] = (
-                    frame[m].astype(np.float32) * (1.0 - alpha) + color_arr * alpha
-                ).astype(np.uint8)
+                frame[m] = (frame[m].astype(np.float32) * (1.0 - alpha) + color_arr * alpha).astype(
+                    np.uint8
+                )
 
         if show_label:
             label = f"{name} {float(conf[i]) * 100:.1f}%"
@@ -332,7 +331,7 @@ def draw_tracked_boxes(
     frame: np.ndarray,
     detections: Sequence[dict],
     *,
-    colors: Dict[str, tuple],
+    colors: dict[str, tuple],
     default_color=(255, 255, 255),
     text_scale: float = 0.6,
     text_thickness: int = 2,
@@ -423,7 +422,14 @@ def _build_models():
     if not detect_class_ids:
         detect_class_ids = [int(person_class)]
 
-    return people_seg_model, fire_model, people_seg_label, fire_label, int(person_class), detect_class_ids
+    return (
+        people_seg_model,
+        fire_model,
+        people_seg_label,
+        fire_label,
+        int(person_class),
+        detect_class_ids,
+    )
 
 
 def _parse_args():
@@ -458,8 +464,8 @@ def _clamp01(x: float) -> float:
 def _passes_udp_world_projection_filter(
     det: dict,
     *,
-    allowed_classes: Optional[Sequence[str]] = None,
-    min_conf: Optional[float] = None,
+    allowed_classes: Sequence[str] | None = None,
+    min_conf: float | None = None,
 ) -> bool:
     cls_name = str(det.get("class") or det.get("class_name") or "").lower()
     if allowed_classes is not None:
@@ -479,14 +485,14 @@ def _passes_udp_world_projection_filter(
 
 
 def _attach_foot_and_world(
-    detections: List[dict],
+    detections: list[dict],
     *,
     pose_data: dict,
-    pose_solution: Optional[PoseSolution],
+    pose_solution: PoseSolution | None,
     width: int,
     height: int,
-    projection_classes: Optional[Sequence[str]] = None,
-    projection_min_conf: Optional[float] = None,
+    projection_classes: Sequence[str] | None = None,
+    projection_min_conf: float | None = None,
 ) -> None:
     """Attach foot_* and world_* fields to merged detections in-place.
 
@@ -609,8 +615,8 @@ def _make_id_flicker_mitigator() -> RobustIDFlickerMitigator:
 
 
 def _update_motion_smoothing_value(
-    pose_smoother: Optional[PoseMotionSmoother],
-    world_smoother: Optional[WorldTrackSmoother],
+    pose_smoother: PoseMotionSmoother | None,
+    world_smoother: WorldTrackSmoother | None,
     value: float,
 ) -> float:
     value = max(0.0, min(1.0, float(value)))
@@ -622,7 +628,9 @@ def _update_motion_smoothing_value(
 
 
 def run_test(args) -> int:
-    people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = _build_models()
+    people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = (
+        _build_models()
+    )
 
     img = cv2.imread(args.test_image)
     if img is None:
@@ -743,7 +751,9 @@ def run_live(args) -> int:
     if torch.cuda.is_available():
         print("gpu:", torch.cuda.get_device_name(0))
 
-    people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = _build_models()
+    people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = (
+        _build_models()
+    )
 
     people_on = bool(S.PEOPLE_ON_DEFAULT)
     fire_on = bool(S.FIRE_ON_DEFAULT)
@@ -896,7 +906,9 @@ def run_live(args) -> int:
                         base_id = int(det["track_id"])
                         cls_name = str(det.get("class", "")).lower()
                         if cls_name in fire_class_names:
-                            det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_FIRE", 1_000_000))
+                            det["track_id"] = base_id + int(
+                                getattr(S, "TRACK_ID_OFFSET_FIRE", 1_000_000)
+                            )
                         else:
                             det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_PEOPLE", 0))
                     except Exception:
@@ -1081,9 +1093,8 @@ def run_live(args) -> int:
                 new_enabled = not bool(pose_smoother.enabled)
                 pose_smoother.set_enabled(new_enabled)
                 world_smoother.set_enabled(new_enabled)
-                print(
-                    f"Motion smoothing {'ENABLED' if new_enabled else 'DISABLED'} | value={motion_smoothing_value:.2f}"
-                )
+                status = "ENABLED" if new_enabled else "DISABLED"
+                print(f"Motion smoothing {status} | value={motion_smoothing_value:.2f}")
 
             elif key in getattr(S, "KEY_DECREASE_MOTION_SMOOTHING", (ord("["), ord("{"))):
                 motion_smoothing_value = _update_motion_smoothing_value(

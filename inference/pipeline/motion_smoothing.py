@@ -16,17 +16,13 @@ packet formatting.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
 
 import numpy as np
-
 from pose_estimator import PoseSolution
-
 
 
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
-
 
 
 def _alpha(cutoff_hz: float, dt: float) -> float:
@@ -36,8 +32,7 @@ def _alpha(cutoff_hz: float, dt: float) -> float:
     return 1.0 / (1.0 + tau / dt)
 
 
-
-def _ypr_from_R_wc(R_wc: np.ndarray) -> Tuple[float, float, float]:
+def _ypr_from_R_wc(R_wc: np.ndarray) -> tuple[float, float, float]:
     """Match the existing pose_estimator yaw/pitch/roll convention."""
     R_cw = np.asarray(R_wc, dtype=np.float64).T
     yaw = float(np.degrees(np.arctan2(R_cw[0, 2], R_cw[2, 2])))
@@ -46,14 +41,12 @@ def _ypr_from_R_wc(R_wc: np.ndarray) -> Tuple[float, float, float]:
     return yaw, pitch, roll
 
 
-
 def _quat_normalize(q: np.ndarray) -> np.ndarray:
     q = np.asarray(q, dtype=np.float64).reshape(4)
     n = float(np.linalg.norm(q))
     if n <= 0.0:
         return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
     return q / n
-
 
 
 def _quat_from_rotmat(R: np.ndarray) -> np.ndarray:
@@ -89,7 +82,6 @@ def _quat_from_rotmat(R: np.ndarray) -> np.ndarray:
     return _quat_normalize(np.array([w, x, y, z], dtype=np.float64))
 
 
-
 def _rotmat_from_quat(q: np.ndarray) -> np.ndarray:
     """Convert quaternion [w, x, y, z] to a 3x3 rotation matrix."""
     w, x, y, z = _quat_normalize(q)
@@ -112,7 +104,6 @@ def _rotmat_from_quat(q: np.ndarray) -> np.ndarray:
         ],
         dtype=np.float64,
     )
-
 
 
 def _quat_slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
@@ -141,7 +132,6 @@ def _quat_slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
     return _quat_normalize(s0 * q0 + s1 * q1)
 
 
-
 def _quat_angle(q0: np.ndarray, q1: np.ndarray) -> float:
     q0 = _quat_normalize(q0)
     q1 = _quat_normalize(q1)
@@ -149,24 +139,21 @@ def _quat_angle(q0: np.ndarray, q1: np.ndarray) -> float:
     return float(2.0 * np.arccos(np.clip(dot, -1.0, 1.0)))
 
 
-
-def _pose_position_params_from_smoothness(smoothness: float) -> Tuple[float, float]:
+def _pose_position_params_from_smoothness(smoothness: float) -> tuple[float, float]:
     s = _clamp01(smoothness)
     min_cutoff_hz = 3.5 - 3.1 * s
     beta = 0.03 + 0.32 * s
     return float(min_cutoff_hz), float(beta)
 
 
-
-def _pose_rotation_params_from_smoothness(smoothness: float) -> Tuple[float, float]:
+def _pose_rotation_params_from_smoothness(smoothness: float) -> tuple[float, float]:
     s = _clamp01(smoothness)
     min_cutoff_hz = 4.5 - 3.8 * s
     beta = 0.04 + 0.42 * s
     return float(min_cutoff_hz), float(beta)
 
 
-
-def _world_params_from_smoothness(smoothness: float) -> Tuple[float, float]:
+def _world_params_from_smoothness(smoothness: float) -> tuple[float, float]:
     s = _clamp01(smoothness)
     min_cutoff_hz = 3.0 - 2.6 * s
     beta = 0.02 + 0.24 * s
@@ -183,10 +170,12 @@ class OneEuroVectorFilter:
         self.reset()
 
     def reset(self) -> None:
-        self._x_prev: Optional[np.ndarray] = None
-        self._dx_hat: Optional[np.ndarray] = None
+        self._x_prev: np.ndarray | None = None
+        self._dx_hat: np.ndarray | None = None
 
-    def set_params(self, *, min_cutoff_hz: float, beta: float, d_cutoff_hz: Optional[float] = None) -> None:
+    def set_params(
+        self, *, min_cutoff_hz: float, beta: float, d_cutoff_hz: float | None = None
+    ) -> None:
         self.min_cutoff_hz = float(min_cutoff_hz)
         self.beta = float(beta)
         if d_cutoff_hz is not None:
@@ -224,10 +213,12 @@ class OneEuroQuaternionFilter:
         self.reset()
 
     def reset(self) -> None:
-        self._q_prev: Optional[np.ndarray] = None
+        self._q_prev: np.ndarray | None = None
         self._speed_hat: float = 0.0
 
-    def set_params(self, *, min_cutoff_hz: float, beta: float, d_cutoff_hz: Optional[float] = None) -> None:
+    def set_params(
+        self, *, min_cutoff_hz: float, beta: float, d_cutoff_hz: float | None = None
+    ) -> None:
         self.min_cutoff_hz = float(min_cutoff_hz)
         self.beta = float(beta)
         if d_cutoff_hz is not None:
@@ -269,7 +260,7 @@ class PoseMotionSmoother:
         self.derivative_cutoff_hz = max(1e-3, float(self.derivative_cutoff_hz))
         self.reset_timeout_s = max(1e-3, float(self.reset_timeout_s))
         self.default_fps = max(1.0, float(self.default_fps))
-        self._last_timestamp: Optional[float] = None
+        self._last_timestamp: float | None = None
 
         pos_cutoff, pos_beta = _pose_position_params_from_smoothness(self.smoothness)
         rot_cutoff, rot_beta = _pose_rotation_params_from_smoothness(self.smoothness)
@@ -311,7 +302,7 @@ class PoseMotionSmoother:
         )
         self.reset()
 
-    def _resolve_dt(self, timestamp: Optional[float]) -> float:
+    def _resolve_dt(self, timestamp: float | None) -> float:
         default_dt = 1.0 / self.default_fps
         if timestamp is None:
             self._last_timestamp = None
@@ -332,11 +323,11 @@ class PoseMotionSmoother:
 
     def smooth(
         self,
-        pose_data: Dict[str, object],
-        pose_solution: Optional[PoseSolution],
+        pose_data: dict[str, object],
+        pose_solution: PoseSolution | None,
         *,
-        timestamp: Optional[float] = None,
-    ) -> Tuple[Dict[str, object], Optional[PoseSolution]]:
+        timestamp: float | None = None,
+    ) -> tuple[dict[str, object], PoseSolution | None]:
         if not self.enabled or self.smoothness <= 0.0:
             return pose_data, pose_solution
 
@@ -398,7 +389,7 @@ class WorldTrackSmoother:
         self.reset_timeout_s = max(1e-3, float(reset_timeout_s))
         self.max_track_age_s = max(1e-3, float(max_track_age_s))
         self.default_fps = max(1.0, float(default_fps))
-        self._states: Dict[int, _WorldTrackState] = {}
+        self._states: dict[int, _WorldTrackState] = {}
         self._min_cutoff_hz, self._beta = _world_params_from_smoothness(self.smoothness)
 
     def reset(self) -> None:
@@ -422,7 +413,7 @@ class WorldTrackSmoother:
             d_cutoff_hz=self.derivative_cutoff_hz,
         )
 
-    def _prune(self, timestamp: Optional[float]) -> None:
+    def _prune(self, timestamp: float | None) -> None:
         if timestamp is None:
             return
         ts = float(timestamp)
@@ -434,7 +425,7 @@ class WorldTrackSmoother:
         for track_id in stale_keys:
             self._states.pop(track_id, None)
 
-    def update_inplace(self, detections, *, timestamp: Optional[float] = None) -> None:
+    def update_inplace(self, detections, *, timestamp: float | None = None) -> None:
         if not self.enabled or self.smoothness <= 0.0:
             return
 

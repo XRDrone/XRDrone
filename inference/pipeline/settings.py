@@ -8,6 +8,7 @@ Edit values here; main.py should not contain hard-coded settings.
 """
 
 from __future__ import annotations
+
 import torch
 
 # -----------------------------
@@ -47,9 +48,7 @@ UNITY_CLASS_ID = {
 
 UDP_MIN_CONF = 0.80
 
-UDP_SEND_CLASSES = (
-    "person",
-)
+UDP_SEND_CLASSES = ("person",)
 
 # -----------------------------
 # Logging
@@ -186,9 +185,7 @@ POSE_ARUCO_DICT = "DICT_4X4_50"
 
 # Marker world positions in meters (origin at marker id 0 by default).
 # Each value is (x, y, z). The pose solver assumes markers lie on the Y=0 plane.
-POSE_MARKER_WORLD_POSITIONS = {
-    0: (0.0, 0.0, 0.0)
-}
+POSE_MARKER_WORLD_POSITIONS = {0: (0.0, 0.0, 0.0)}
 
 # Solver policy:
 #   - "auto": use single-marker when only one known marker is visible,
