@@ -2,7 +2,7 @@
 
 This file explains the runtime settings in `settings.py`.
 Edit these values to control video input, models, UDP output, pose estimation, smoothing, overlays, and keybinds.
-Fixed optimized pipeline policy is now hard-coded in `main.py`, so this document only describes the remaining configurable settings.
+Fixed optimized pipeline policy is now hard-coded in the runtime modules (`live_runner.py` and `runtime_builders.py`), so this document only describes the remaining configurable settings.
 
 ## Input / Output
 
@@ -201,7 +201,7 @@ These settings enable the bounded runtime controller that adjusts smoothing and 
 
 ## Practical Notes
 
-- Fixed optimized policy such as the Ultralytics tracking path, pose-loss fallback, pose refinement, and motion-smoothing enablement is now hard-coded in `main.py`.
+- Fixed optimized policy such as the Ultralytics tracking path, pose-loss fallback, pose refinement, and motion-smoothing enablement is now hard-coded in the runtime modules (`live_runner.py` and `runtime_builders.py`).
 - The most commonly adjusted settings are usually:
   - `INPUT_MODE`
   - `WEBCAM_INDEX` / `CAPTURE_CARD_INDEX`

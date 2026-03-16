@@ -178,6 +178,16 @@ The mode inside brackets can be:
 - `low_trust`
 - `recovering`
 
+These mode decisions come from `AdaptiveRuntimeTuner._choose_mode()` in `adaptive_tuning.py`.
+The tuner checks modes in this priority order:
+
+1. `low_trust`
+2. `stable`
+3. `jittery_visible`
+4. `recovering`
+
+That order matters. For example, if the system is noisy enough to qualify as `jittery_visible` but also has very low pose validity, it will be reported as `low_trust` because that check runs first.
+
 ### Left side of the line
 
 - `smooth` = current motion-smoothing value being applied
@@ -196,12 +206,133 @@ The mode inside brackets can be:
 - `fps` = average recent runtime FPS
 - `drops` = average recent dropped-frame estimate
 
-### What the modes generally mean
+### Exact conditions for switching modes
 
-- `stable`: pose and tracked output look stable; tuner is easing back toward the base settings.
-- `jittery_visible`: pose is still visible, but motion/IDs look noisy; tuner is increasing stabilization.
-- `low_trust`: the current runtime state is unreliable, usually because pose validity is low, marker support is weak, or frame drops are high.
-- `recovering`: the system is between bad and stable; tuner moves back toward the base settings gradually.
+All thresholds below come from `adaptive_tuning.py`.
+
+#### `low_trust`
+The tuner switches to `low_trust` if **any one** of these is true:
+
+- `pose_valid_ratio < 0.35`
+- `avg_markers_used < 0.75`
+- `avg_drop_frames > 3.0`
+
+This is the most conservative mode. It wins immediately if any of the above conditions are met.
+
+#### `stable`
+The tuner switches to `stable` only if it did **not** already enter `low_trust`, and **all** of these are true:
+
+- `pose_valid_ratio >= 0.85`
+- `pose_position_jitter_m <= 0.05`
+- `pose_rotation_jitter_deg <= 2.5`
+- `coast_ratio <= 0.12`
+- `id_switch_rate <= 0.05`
+- `avg_drop_frames <= 1.0`
+
+This is the cleanest runtime state. The controller uses it to relax stabilization back toward the base settings.
+
+#### `jittery_visible`
+The tuner switches to `jittery_visible` only if it did **not** already enter `low_trust` or `stable`, and:
+
+- `pose_valid_ratio >= 0.35`
+
+and **at least one** of these is true:
+
+- `pose_position_jitter_m >= 0.08`
+- `pose_rotation_jitter_deg >= 4.0`
+- `coast_ratio >= 0.18`
+- `id_switch_rate >= 0.08`
+
+This means pose is still present often enough to trust visibility, but the motion or track continuity is noisy enough that the tuner increases stabilization.
+
+#### `recovering`
+The tuner switches to `recovering` when the frame history is **not bad enough** for `low_trust`, **not clean enough** for `stable`, and **not noisy enough** for `jittery_visible`.
+
+Operationally, this is the in-between state where the controller steps values back toward the configured base settings.
+
+### What each mode changes
+
+These target adjustments come from `AdaptiveRuntimeTuner.propose_adjustment()` in `adaptive_tuning.py`.
+
+#### `stable`
+- `smooth` target: `max(motion_smoothing_min, base_motion_smoothing - 0.10)`
+- `tau_on` target: `base_tau_on`
+- `tau_off` target: `min(id_tau_off_max, base_tau_off + 0.02)`
+- `coast` target: `max(id_coast_frames_min, base_coast_frames - 1)`
+
+#### `jittery_visible`
+- `smooth` target: `min(motion_smoothing_max, base_motion_smoothing + 0.15)`
+- `tau_on` target: `base_tau_on`
+- `tau_off` target: `max(id_tau_off_min, base_tau_off - 0.06)`
+- `coast` target: `min(id_coast_frames_max, base_coast_frames + 2)`
+
+#### `low_trust`
+- `smooth` target: `min(motion_smoothing_max, base_motion_smoothing + 0.10)`
+- `tau_on` target: `min(id_tau_on_max, base_tau_on + 0.04)`
+- `tau_off` target: `min(id_tau_off_max, base_tau_off + 0.04)`
+- `coast` target: `max(id_coast_frames_min, base_coast_frames - 1)`
+
+#### `recovering`
+- `smooth` target: `base_motion_smoothing`
+- `tau_on` target: `base_tau_on`
+- `tau_off` target: `base_tau_off`
+- `coast` target: `base_coast_frames`
+
+### How quickly a mode change can take effect
+
+The mode logic is not evaluated continuously every frame without delay. The tuner has three built-in timing gates in `adaptive_tuning.py`:
+
+- `window_frames`: rolling-history length used for the recent metrics
+- `update_interval_frames`: the controller only proposes a change when `frame_count % update_interval_frames == 0`
+- `cooldown_frames`: after a change is applied, the tuner will not apply another one until this many frames pass
+
+That means a mode switch has two kinds of delay:
+
+1. **History delay**: the metrics need enough recent data to be meaningful.
+2. **Application delay**: even after the metrics indicate a new mode, the tuner waits until the next update boundary and may also be blocked by cooldown.
+
+So the controller reacts on a rolling, bounded cadence rather than instantaneously.
+
+### Estimated motion-smoothing lag by mode
+
+The parameters that control the tuner-side smoothing amount come from `adaptive_tuning.py`:
+
+- `base_motion_smoothing`
+- `motion_smoothing_min`
+- `motion_smoothing_max`
+- `motion_smoothing_step`
+
+The uploaded files show **what smoothing value the tuner targets**, but they do **not** include the separate implementation file that actually applies the smoothing filter to motion. Because of that, the exact physical lag in frames or milliseconds cannot be proven from the uploaded files alone.
+
+The estimates below assume a common first-order smoothing pattern where higher `smooth` means more carryover from the previous frame. Under that assumption, a practical rule of thumb is:
+
+```text
+estimated lag (frames) ≈ smooth / (1 - smooth)
+estimated lag (ms) ≈ 1000 * estimated_lag_frames / fps
+```
+
+Using that approximation, the four modes rank like this:
+
+- `stable`: **lowest lag** because it pushes `smooth` downward by about `0.10` from base
+- `recovering`: **baseline lag** because it aims at `base_motion_smoothing`
+- `low_trust`: **moderately increased lag** because it raises `smooth` by about `0.10` from base
+- `jittery_visible`: **highest lag** because it raises `smooth` by about `0.15` from base
+
+Example only, assuming `base_motion_smoothing = 0.50`:
+
+- `stable` -> target `smooth ≈ 0.40` -> estimated lag `≈ 0.67` frames
+- `recovering` -> target `smooth ≈ 0.50` -> estimated lag `≈ 1.00` frame
+- `low_trust` -> target `smooth ≈ 0.60` -> estimated lag `≈ 1.50` frames
+- `jittery_visible` -> target `smooth ≈ 0.65` -> estimated lag `≈ 1.86` frames
+
+At `30 FPS`, those examples are approximately:
+
+- `stable` -> `~22 ms`
+- `recovering` -> `~33 ms`
+- `low_trust` -> `~50 ms`
+- `jittery_visible` -> `~62 ms`
+
+Also note that the tuner does not jump straight to the target in one step unless the current value is already close. It moves by `motion_smoothing_step`, so the full transition into a new mode can take several update cycles.
 
 ---
 
@@ -295,16 +426,81 @@ This is useful for inspecting the exact packet structure being produced by the p
 ## 4. Important terms that may confuse readers
 
 ## `holding`
-When you see `ArUco: pose lost | holding`, it means the pose system just lost marker-based visibility, but it is still inside the short configurable hold window. The pose remains invalid, but the last valid numeric pose values may be temporarily preserved internally for continuity.
+When you see `ArUco: pose lost | holding`, it means the pose system just lost marker-based visibility, but it is still inside the pose-loss hold window. During that window, the system can keep the last valid numeric pose values internally for continuity even though the pose is already marked invalid for the current frame.
+
+### How long `holding` lasts
+
+From the uploaded files, this duration is described as a **short configurable hold window**, but the exact parameter name and source file that define that pose-loss hold duration are **not present in the uploaded files**. In other words:
+
+- the behavior is documented here
+- the exact symbol that configures it was not available to verify
+- the exact duration in frames or seconds therefore cannot be stated with confidence from the provided files alone
+
+So `holding` lasts **until that pose-loss hold window expires**, but this document cannot honestly name the exact parameter unless the pose-loss implementation file is provided.
 
 ## `[hold]`
-When you see `[hold]` appended to a tracked object label, it means the ID-flicker continuity layer is **coasting** the last stable detection for a short number of frames instead of showing a brand-new observation.
+When you see `[hold]` appended to a tracked object label, it means the ID-flicker continuity layer is currently forwarding the last stable tracked object instead of using a fresh accepted observation from the current frame.
+
+### How long `[hold]` lasts
+
+This visible state is tied to the continuity layer's coast duration.
+
+The runtime value is printed as `coast=<N>` in the adaptive tuning log line, and the tuner-side parameters visible in `adaptive_tuning.py` are:
+
+- `current_coast_frames`
+- `base_coast_frames`
+- `id_coast_frames_min`
+- `id_coast_frames_max`
+- `id_coast_step`
+
+So `[hold]` can last for **up to the current `coast_frames` budget**, measured in frames after the last accepted observation, unless one of these happens sooner:
+
+- a fresh detection is accepted again
+- the object is dropped entirely
+- the coast budget is exhausted
+
+To convert that to time:
+
+```text
+hold time (seconds) ≈ coast_frames / runtime_fps
+```
+
+Examples:
+
+- `coast=5` at `30 FPS` -> about `0.17 s`
+- `coast=5` at `10 FPS` -> about `0.50 s`
 
 ## `coasted`
-Internally, the continuity layer uses the term `coasted` for a temporarily held-forward tracked detection. The visible on-screen sign of this is the `[hold]` suffix.
+Internally, `coasted` is the continuity-state name for a held-forward track. The visible on-screen sign of this state is the `[hold]` suffix.
+
+### How long `coasted` lasts
+
+`coasted` lasts for the **same duration** as `[hold]`, because `[hold]` is just the visible rendering of that internal state.
+
+So, from the uploaded tuner code, the duration is controlled indirectly by the current continuity coast budget, with the relevant tuner-side parameters in `adaptive_tuning.py` being:
+
+- `current_coast_frames`
+- `base_coast_frames`
+- `id_coast_frames_min`
+- `id_coast_frames_max`
+- `id_coast_step`
+
+The actual time in seconds still depends on current runtime FPS.
 
 ## `observed`
 Internally, a tracked detection marked as `observed` is a fresh accepted detection rather than a coasted one. This internal state is not printed directly on the video frame.
+
+### How long `observed` lasts
+
+From the uploaded files, `observed` should be read as a **current emission-state label**, not as a separate timed hold window.
+
+So the safest interpretation is:
+
+- `observed` applies to the current accepted detection output
+- on the next frame, that same track may again be `observed`, may switch to `coasted`, or may disappear
+- no separate `observed_duration` parameter is visible in the uploaded files
+
+In practical terms, `observed` lasts for the current accepted output step, then gets recomputed again on the next frame/update.
 
 ---
 
