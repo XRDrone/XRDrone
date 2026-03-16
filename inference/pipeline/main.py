@@ -43,8 +43,22 @@ from output_formatter import to_unity_udp_packet
 from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
 from pose_estimator import ArucoPoseEstimator, PoseSolution
 from streaming import UDPPublisher
-from tracker import OpenCVKalmanIOUTracker
 from ultralytics import YOLO
+
+# Fixed optimized pipeline policy (removed from settings.py).
+TRACKING_ENABLED = True
+ULTRALYTICS_TRACKER_YAML = "botsort_drone.yaml"
+TRACKING_INPUT_CONF_PEOPLE = 0.10
+TRACKING_INPUT_CONF_FIRE = 0.10
+
+ID_FLICKER_MITIGATION_ENABLED = True
+ID_FLICKER_REQUIRE_TRACK_ID = True
+ID_FLICKER_USE_CONF_EMA = True
+
+POSE_ENABLE_REFINEMENT = True
+POSE_LOSS_HOLD_ENABLED = True
+POSE_MOTION_SMOOTHING_ENABLED = True
+WORLD_MOTION_SMOOTHING_ENABLED = True
 
 
 def draw_pose_mode_status(
@@ -560,27 +574,9 @@ def _attach_foot_and_world(
         det["world_z"] = float(P_w[2])
 
 
-def _make_opencv_tracker() -> OpenCVKalmanIOUTracker:
-    return OpenCVKalmanIOUTracker(
-        min_iou=float(getattr(S, "TRACK_MIN_IOU", 0.30)),
-        max_age_frames=int(getattr(S, "TRACK_MAX_AGE_FRAMES", 90)),
-        per_class=bool(getattr(S, "TRACK_PER_CLASS", True)),
-        process_noise=float(getattr(S, "TRACK_KF_PROCESS_NOISE", 1e-2)),
-        measurement_noise=float(getattr(S, "TRACK_KF_MEAS_NOISE", 1e-1)),
-        matching_method=str(getattr(S, "TRACK_MATCHING_METHOD", "hungarian")),
-        min_match_score=float(getattr(S, "TRACK_MIN_MATCH_SCORE", 0.45)),
-        max_foot_distance_norm=float(getattr(S, "TRACK_MAX_FOOT_DISTANCE_NORM", 0.08)),
-        max_world_distance_m=float(getattr(S, "TRACK_MAX_WORLD_DISTANCE_M", 2.5)),
-        use_world_position=bool(getattr(S, "TRACK_USE_WORLD_POSITION", True)),
-        world_score_weight=float(getattr(S, "TRACK_WORLD_SCORE_WEIGHT", 0.65)),
-        iou_score_weight=float(getattr(S, "TRACK_IOU_SCORE_WEIGHT", 0.25)),
-        foot_score_weight=float(getattr(S, "TRACK_FOOT_SCORE_WEIGHT", 0.10)),
-    )
-
-
 def _make_pose_motion_smoother() -> PoseMotionSmoother:
     return PoseMotionSmoother(
-        enabled=bool(getattr(S, "POSE_MOTION_SMOOTHING_ENABLED_DEFAULT", True)),
+        enabled=POSE_MOTION_SMOOTHING_ENABLED,
         smoothness=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
         derivative_cutoff_hz=float(getattr(S, "MOTION_SMOOTHING_DERIVATIVE_CUTOFF_HZ", 1.0)),
         reset_timeout_s=float(getattr(S, "MOTION_SMOOTHING_RESET_TIMEOUT_S", 0.75)),
@@ -590,7 +586,7 @@ def _make_pose_motion_smoother() -> PoseMotionSmoother:
 
 def _make_world_motion_smoother() -> WorldTrackSmoother:
     return WorldTrackSmoother(
-        enabled=bool(getattr(S, "WORLD_MOTION_SMOOTHING_ENABLED_DEFAULT", True)),
+        enabled=WORLD_MOTION_SMOOTHING_ENABLED,
         smoothness=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
         derivative_cutoff_hz=float(getattr(S, "MOTION_SMOOTHING_DERIVATIVE_CUTOFF_HZ", 1.0)),
         reset_timeout_s=float(getattr(S, "MOTION_SMOOTHING_RESET_TIMEOUT_S", 0.75)),
@@ -601,15 +597,15 @@ def _make_world_motion_smoother() -> WorldTrackSmoother:
 
 def _make_id_flicker_mitigator() -> RobustIDFlickerMitigator:
     return RobustIDFlickerMitigator(
-        enabled=bool(getattr(S, "ID_FLICKER_MITIGATION_ENABLED_DEFAULT", True)),
+        enabled=ID_FLICKER_MITIGATION_ENABLED,
         apply_classes=getattr(S, "ID_FLICKER_APPLY_CLASSES", ("person",)),
         tau_on=float(getattr(S, "ID_FLICKER_TAU_ON", getattr(S, "UDP_MIN_CONF", 0.80))),
         tau_off=float(getattr(S, "ID_FLICKER_TAU_OFF", 0.55)),
         coast_frames=int(getattr(S, "ID_FLICKER_COAST_FRAMES", 6)),
         drop_frames=int(getattr(S, "ID_FLICKER_DROP_FRAMES", 45)),
         ema_alpha=float(getattr(S, "ID_FLICKER_EMA_ALPHA", 0.45)),
-        use_conf_ema=bool(getattr(S, "ID_FLICKER_USE_CONF_EMA", True)),
-        require_track_id=bool(getattr(S, "ID_FLICKER_REQUIRE_TRACK_ID", True)),
+        use_conf_ema=ID_FLICKER_USE_CONF_EMA,
+        require_track_id=ID_FLICKER_REQUIRE_TRACK_ID,
         coast_conf_decay=float(getattr(S, "ID_FLICKER_COAST_CONF_DECAY", 0.985)),
     )
 
@@ -650,13 +646,13 @@ def run_test(args) -> int:
         single_init_solver=str(getattr(S, "POSE_SINGLE_INIT_SOLVER", "ippe_square")),
         multi_init_solver=str(getattr(S, "POSE_MULTI_INIT_SOLVER", "ransac")),
         refiner=str(getattr(S, "POSE_REFINER", "vvs")),
-        enable_refinement=bool(getattr(S, "POSE_ENABLE_REFINEMENT", True)),
+        enable_refinement=POSE_ENABLE_REFINEMENT,
         min_markers_for_multi=int(getattr(S, "POSE_MIN_MARKERS_FOR_MULTI", 2)),
         corner_refinement=str(getattr(S, "POSE_CORNER_REFINEMENT", "none")),
         ransac_reproj_threshold_px=float(getattr(S, "POSE_RANSAC_REPROJ_THRESHOLD_PX", 4.0)),
         ransac_confidence=float(getattr(S, "POSE_RANSAC_CONFIDENCE", 0.99)),
         ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
-        pose_loss_hold_enabled=bool(getattr(S, "POSE_LOSS_HOLD_ENABLED_DEFAULT", True)),
+        pose_loss_hold_enabled=POSE_LOSS_HOLD_ENABLED,
         pose_loss_hold_timeout_s=float(getattr(S, "POSE_LOSS_HOLD_TIMEOUT_S", 0.35)),
         pose_loss_preserve_last_numbers_during_hold=bool(
             getattr(S, "POSE_LOSS_PRESERVE_LAST_NUMBERS_DURING_HOLD", True)
@@ -769,13 +765,8 @@ def run_live(args) -> int:
 
     draw_detections = bool(S.DRAW_DETECTIONS_DEFAULT)
 
-    tracking_enabled = bool(getattr(S, "TRACKING_ENABLED_DEFAULT", False))
-    tracking_method = str(getattr(S, "TRACKING_METHOD", "opencv")).lower().strip()
+    tracking_enabled = TRACKING_ENABLED
     draw_track_ids = bool(getattr(S, "DRAW_TRACK_IDS", True))
-
-    tracker = None
-    if tracking_enabled and tracking_method == "opencv":
-        tracker = _make_opencv_tracker()
 
     pose_estimator = ArucoPoseEstimator(
         enabled=bool(getattr(S, "POSE_ENABLED_DEFAULT", True)),
@@ -787,13 +778,13 @@ def run_live(args) -> int:
         single_init_solver=str(getattr(S, "POSE_SINGLE_INIT_SOLVER", "ippe_square")),
         multi_init_solver=str(getattr(S, "POSE_MULTI_INIT_SOLVER", "ransac")),
         refiner=str(getattr(S, "POSE_REFINER", "vvs")),
-        enable_refinement=bool(getattr(S, "POSE_ENABLE_REFINEMENT", True)),
+        enable_refinement=POSE_ENABLE_REFINEMENT,
         min_markers_for_multi=int(getattr(S, "POSE_MIN_MARKERS_FOR_MULTI", 2)),
         corner_refinement=str(getattr(S, "POSE_CORNER_REFINEMENT", "none")),
         ransac_reproj_threshold_px=float(getattr(S, "POSE_RANSAC_REPROJ_THRESHOLD_PX", 4.0)),
         ransac_confidence=float(getattr(S, "POSE_RANSAC_CONFIDENCE", 0.99)),
         ransac_iterations=int(getattr(S, "POSE_RANSAC_ITERATIONS", 100)),
-        pose_loss_hold_enabled=bool(getattr(S, "POSE_LOSS_HOLD_ENABLED_DEFAULT", True)),
+        pose_loss_hold_enabled=POSE_LOSS_HOLD_ENABLED,
         pose_loss_hold_timeout_s=float(getattr(S, "POSE_LOSS_HOLD_TIMEOUT_S", 0.35)),
         pose_loss_preserve_last_numbers_during_hold=bool(
             getattr(S, "POSE_LOSS_PRESERVE_LAST_NUMBERS_DURING_HOLD", True)
@@ -833,8 +824,8 @@ def run_live(args) -> int:
     udp = UDPPublisher(S.UDP_IP, S.UDP_PORT) if S.ENABLE_UDP else None
 
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
-    people_track_conf = float(getattr(S, "TRACKING_INPUT_CONF_PEOPLE", S.PEOPLE_CONF))
-    fire_track_conf = float(getattr(S, "TRACKING_INPUT_CONF_FIRE", S.FIRE_CONF))
+    people_track_conf = TRACKING_INPUT_CONF_PEOPLE
+    fire_track_conf = TRACKING_INPUT_CONF_FIRE
 
     try:
         while True:
@@ -873,8 +864,8 @@ def run_live(args) -> int:
             people_results = []
             fire_results = []
 
-            use_ultra_track = bool(tracking_enabled and tracking_method == "ultralytics")
-            ultra_tracker_yaml = str(getattr(S, "ULTRALYTICS_TRACKER", "bytetrack.yaml"))
+            use_ultra_track = bool(tracking_enabled)
+            ultra_tracker_yaml = ULTRALYTICS_TRACKER_YAML
 
             if people_on:
                 if use_ultra_track:
@@ -930,8 +921,8 @@ def run_live(args) -> int:
                     except Exception:
                         pass
 
-            # Attach "foot" + optional world registration fields before OpenCV tracking
-            # so the tracker can use ground-plane coordinates when pose is valid.
+            # Attach "foot" + optional world registration fields before UDP formatting
+            # so tracked detections can use ground-plane coordinates when pose is valid.
             h_img, w_img = frame.shape[:2]
             _attach_foot_and_world(
                 merged,
@@ -942,9 +933,6 @@ def run_live(args) -> int:
                 projection_classes=S.UDP_SEND_CLASSES,
                 projection_min_conf=S.UDP_MIN_CONF,
             )
-
-            if tracking_enabled and tracking_method == "opencv" and tracker is not None:
-                tracker.update(merged)
 
             world_smoother.update_inplace(merged, timestamp=now)
 
@@ -1063,11 +1051,6 @@ def run_live(args) -> int:
             elif key in getattr(S, "KEY_TOGGLE_TRACKING", (ord("t"), ord("T"))):
                 tracking_enabled = not tracking_enabled
                 id_flicker_mitigator.reset()
-                if tracking_enabled and tracking_method == "opencv":
-                    if tracker is None:
-                        tracker = _make_opencv_tracker()
-                    else:
-                        tracker.reset()
 
             elif key in getattr(S, "KEY_TOGGLE_POSE_MODE_OVERLAY", (ord("m"), ord("M"))):
                 pose_mode_overlay_on = not pose_mode_overlay_on

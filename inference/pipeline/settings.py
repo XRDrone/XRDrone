@@ -4,7 +4,7 @@ XRDrone local pipeline settings.
 This file centralizes all runtime configuration for the local YOLO
 inference demo (video source, model paths, thresholds, HUD, logging, keys,
 and network streaming).
-Edit values here; main.py should not contain hard-coded settings.
+Edit tunable values here; fixed optimized pipeline policy is intentionally hard-coded in main.py.
 """
 
 from __future__ import annotations
@@ -97,45 +97,10 @@ PEOPLE_ON_DEFAULT = True
 FIRE_ON_DEFAULT = False
 RECORDING_ENABLED_DEFAULT = False
 
-# Persistent multi-object tracking (stable IDs)
-TRACKING_ENABLED_DEFAULT = True
-
-# Choose tracker backend:
-#  - "opencv": lightweight Kalman+IoU tracker in tracker.py
-#  - "ultralytics": Ultralytics built-in trackers (BoT-SORT/ByteTrack)
-TRACKING_METHOD = "ultralytics"  # "opencv" | "ultralytics"
-
-# OpenCV tracker tuning
-TRACK_MIN_IOU = 0.30
-TRACK_MAX_AGE_FRAMES = 120  # how long an object can be missing and still keep its ID
-TRACK_PER_CLASS = True
-TRACK_KF_PROCESS_NOISE = 1e-2
-TRACK_KF_MEAS_NOISE = 1e-1
-
-# Matching backend for the OpenCV tracker.
-TRACK_MATCHING_METHOD = "hungarian"  # "hungarian" | "greedy"
-TRACK_MIN_MATCH_SCORE = 0.45
-TRACK_MAX_FOOT_DISTANCE_NORM = 0.08
-TRACK_MAX_WORLD_DISTANCE_M = 2.5
-TRACK_USE_WORLD_POSITION = True
-TRACK_WORLD_SCORE_WEIGHT = 0.65
-TRACK_IOU_SCORE_WEIGHT = 0.25
-TRACK_FOOT_SCORE_WEIGHT = 0.10
-
-# Ultralytics tracker config (only used when TRACKING_METHOD="ultralytics")
-# Ultralytics supports "botsort.yaml" (default) and "bytetrack.yaml".
-ULTRALYTICS_TRACKER = "botsort_drone.yaml"
-
-# Lower tracking-time detector thresholds so BoT-SORT/ByteTrack can associate
-# weaker detections without immediately losing the existing track ID.
-TRACKING_INPUT_CONF_PEOPLE = 0.10
-TRACKING_INPUT_CONF_FIRE = 0.10
-
-# If you use separate trackers per model (people vs fire), offsets prevent ID collisions.
+# Tracking is now fixed in the pipeline to use the optimized Ultralytics
+# tracking path. These remaining values only affect downstream formatting.
 TRACK_ID_OFFSET_PEOPLE = 0
 TRACK_ID_OFFSET_FIRE = 1_000_000
-
-# Draw per-instance IDs on the output frame (useful for demos)
 DRAW_TRACK_IDS = True
 
 DRAW_DETECTIONS_DEFAULT = True
@@ -143,20 +108,13 @@ DRAW_DETECTIONS_DEFAULT = True
 # -----------------------------
 # Robust mitigation of Object-ID flicker in UDP JSON streams
 # -----------------------------
-# Sender-side continuity layer:
-#   - tau_on / tau_off hysteresis
-#   - per-track confidence EMA
-#   - bounded hold-and-forward ("coasting")
-#
-# This does not change the external UDP schema.
-ID_FLICKER_MITIGATION_ENABLED_DEFAULT = True
+# The continuity layer itself is fixed on in the pipeline.
+# These remain as tuning controls for the hard-coded path.
 ID_FLICKER_APPLY_CLASSES = ("person",)
-ID_FLICKER_REQUIRE_TRACK_ID = True
 
 # Confidence gate:
 #   new IDs must reach tau_on
 #   existing emitted IDs can persist down to tau_off
-ID_FLICKER_USE_CONF_EMA = True
 ID_FLICKER_EMA_ALPHA = 0.45
 ID_FLICKER_TAU_ON = 0.80
 ID_FLICKER_TAU_OFF = 0.55
@@ -202,23 +160,21 @@ POSE_MULTI_INIT_SOLVER = "sqpnp"  # "sqpnp" | "ransac" | "iterative" | "ippe_squ
 
 # Nonlinear refinement run after the initializer.
 POSE_REFINER = "vvs"  # "vvs" | "lm" | "none"
-POSE_ENABLE_REFINEMENT = True
 
 # Minimum known visible markers required to enter the multi-marker board path.
 POSE_MIN_MARKERS_FOR_MULTI = 2
 
 # Optional ArUco detector corner refinement.
-POSE_CORNER_REFINEMENT = "none"  # "none" | "subpix" | "contour" | "apriltag"
+POSE_CORNER_REFINEMENT = "apriltag"  # "none" | "subpix" | "contour" | "apriltag"
 
 # RANSAC tuning for the multi-marker initializer (and optional single-marker fallback).
 POSE_RANSAC_REPROJ_THRESHOLD_PX = 4.0
 POSE_RANSAC_CONFIDENCE = 0.99
 POSE_RANSAC_ITERATIONS = 100
 
-# Explicit pose-loss fallback when no known marker corners are visible.
+# Explicit pose-loss fallback when no known marker corners are visible is fixed on in the pipeline.
 # During the short hold timeout, the last valid pose numbers are preserved,
 # but pose_valid remains False and registration stays unavailable.
-POSE_LOSS_HOLD_ENABLED_DEFAULT = True
 POSE_LOSS_HOLD_TIMEOUT_S = 0.35
 POSE_LOSS_PRESERVE_LAST_NUMBERS_DURING_HOLD = True
 POSE_LOSS_CLEAR_NUMBERS_AFTER_TIMEOUT = True
@@ -244,11 +200,7 @@ MOTION_SMOOTHING_STEP = 0.05
 MOTION_SMOOTHING_DERIVATIVE_CUTOFF_HZ = 1.0
 MOTION_SMOOTHING_RESET_TIMEOUT_S = 0.75
 
-# Layer 1: smooth camera pose before world projection.
-POSE_MOTION_SMOOTHING_ENABLED_DEFAULT = True
-
-# Layer 2: smooth per-track world positions after projection.
-WORLD_MOTION_SMOOTHING_ENABLED_DEFAULT = True
+# Motion smoothing is fixed on in the pipeline for both pose and world-space filtering.
 WORLD_MOTION_SMOOTHING_MAX_TRACK_AGE_S = 1.50
 
 # -----------------------------
@@ -260,12 +212,6 @@ MASK_TEXT_THICKNESS = 2
 
 COLORS = {
     "person": (255, 255, 0),
-    "item": (255, 0, 0),
-    "fire": (255, 0, 255),
-    "smoke": (0, 255, 255),
-    "chair": (0, 200, 0),
-    "couch": (200, 0, 0),
-    "dining table": (0, 165, 255),
 }
 
 # -----------------------------
