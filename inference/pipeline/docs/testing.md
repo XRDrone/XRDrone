@@ -15,6 +15,19 @@ This test file is a validation utility. It is not part of the live inference loo
 
 ---
 
+## Native build prerequisite
+
+The pipeline now depends on the `xrdrone_native` extension for several hot-path helper modules. Build the native module in the active virtual environment before running any test mode that imports the pipeline:
+
+```bash
+bash build_native.sh
+python -c "import xrdrone_native; print('ok')"
+```
+
+If the native build has not succeeded yet, `main.py`, `test_runner.py`, and `test_with_coverage.py` can fail during import or runtime because the Rust-backed helper modules are not available.
+
+---
+
 ## Test Script
 
 File:
@@ -51,16 +64,18 @@ Core checks implemented by the script:
 Command:
 
 ```bash
+bash build_native.sh
 python test_with_coverage.py
 ```
 
 What it does:
 
-1. Builds a sample UDP packet.
-2. Validates that the packet structure matches the documented contract.
-3. Sends the packet over UDP on localhost.
-4. Receives the same packet back.
-5. Validates the received packet again.
+1. Ensures the Rust-backed helper module is built.
+2. Builds a sample UDP packet.
+3. Validates that the packet structure matches the documented contract.
+4. Sends the packet over UDP on localhost.
+5. Receives the same packet back.
+6. Validates the received packet again.
 
 This confirms:
 
@@ -76,6 +91,7 @@ PASSED: UDP formatter structure and UDP send/receive are valid
 
 Typical failure causes:
 
+- the native module was not built in the active environment
 - missing required fields
 - extra unexpected fields
 - wrong field types
@@ -112,6 +128,7 @@ Important:
 
 - `--live` does **not** generate packets by itself.
 - A separate pipeline process must already be running and sending UDP packets.
+- That pipeline process must have been started in an environment where `xrdrone_native` is already built.
 
 Typical usage:
 
@@ -140,6 +157,7 @@ Common reasons this mode fails:
 - the listener is bound to the wrong port
 - another process is already using the port
 - no valid packets arrive before timeout
+- the native module was not built in the environment running the pipeline
 
 ---
 
@@ -177,6 +195,7 @@ Important:
 
 - `--stats` does **not** generate packets by itself unless used with `--video`.
 - A separate pipeline process must already be running and sending UDP packets.
+- That process must already have the native build available.
 
 This mode is useful for measuring:
 
@@ -247,6 +266,7 @@ Notes:
 - when `--video` is used, the script processes the full video automatically
 - a progress bar is shown while packets are collected
 - at least one valid UDP packet must be received during the run
+- the native module must already be built in the environment used by the spawned pipeline process
 
 Internally, this mode temporarily switches the pipeline input mode to file-based input, sets the target video path, enables UDP output, runs the pipeline, then restores the previous settings.
 
@@ -360,12 +380,14 @@ The test fails if any required field is missing, any unexpected field is present
 ### Basic contract + UDP transport
 
 ```bash
+bash build_native.sh
 python test_with_coverage.py
 ```
 
 ### Validate live packets from a running pipeline
 
 ```bash
+bash build_native.sh
 python main.py
 python test_with_coverage.py --live --packets 5 --timeout 8
 ```
@@ -373,6 +395,7 @@ python test_with_coverage.py --live --packets 5 --timeout 8
 ### Collect stats from a running pipeline
 
 ```bash
+bash build_native.sh
 python main.py
 python test_with_coverage.py --stats --packets 120 --timeout 8
 ```
@@ -380,6 +403,7 @@ python test_with_coverage.py --stats --packets 120 --timeout 8
 ### Run a video through the pipeline and collect stats automatically
 
 ```bash
+bash build_native.sh
 python test_with_coverage.py --video "/path/to/video.mp4" --stats
 ```
 
@@ -406,6 +430,7 @@ Use `test_with_coverage.py` to validate that the XRDrone pipeline is producing U
 
 Recommended usage:
 
+- build `xrdrone_native` first
 - use the default mode for fast formatter and UDP transport checks
 - use `--live` to verify real packets from `main.py`
 - use `--stats` to measure packet behavior during runtime

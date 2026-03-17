@@ -1,12 +1,23 @@
 # Setup
 
-This project uses a Python virtual environment and `requirements.txt` for dependencies. On Windows, the most reliable CUDA setup was:
+This project uses a Python virtual environment, `requirements.txt`, and a local Rust extension build.
 
-1. Create and activate a virtual environment.
-2. Install `requirements.txt`.
-3. Reinstall PyTorch with the CUDA 12.8 wheels.
-4. Verify that CUDA is available in Python.
-5. Optionally install the local Git pre-commit hook.
+## Downloads
+
+### Windows
+
+- Python 3.13: download and install from `https://www.python.org/downloads/windows/`
+- Rust (`rustup-init.exe`): download and install from `https://www.rust-lang.org/tools/install`
+- NVIDIA CUDA Toolkit 12.8: download from `https://developer.nvidia.com/cuda-12-8-0-download-archive`
+
+After installing Python and Rust, open a new terminal and verify:
+
+```powershell
+python --version
+rustc --version
+cargo --version
+nvidia-smi
+```
 
 ## Windows
 
@@ -22,44 +33,65 @@ pip install -r requirements.txt
 pip uninstall -y torch torchvision torchaudio
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
+bash build_native.sh
+maturin develop --release
+
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('cuda available:', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU found')"
+python -c "import xrdrone_native; print(xrdrone_native.__file__)"
+```
+
+## macOS / Linux
+
+### Downloads
+
+- Python 3.13: download from `https://www.python.org/downloads/`
+- Rust: install from `https://www.rust-lang.org/tools/install`
+- Linux CUDA 12.8 archive: `https://developer.nvidia.com/cuda-12-8-0-download-archive`
+- Linux CUDA installation guide: `https://docs.nvidia.com/cuda/cuda-installation-guide-linux/`
+
+Verify:
+
+```bash
+python3 --version
+rustc --version
+cargo --version
+```
+
+From the project folder:
+
+```bash
+python3 -m venv yolovenv
+source yolovenv/bin/activate
+
+python -m pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
+
+bash build_native.sh
+maturin develop --release
+
+python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('cuda available:', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU found')"
+python -c "import xrdrone_native; print(xrdrone_native.__file__)"
 ```
 
 ## Optional: enable pre-commit
 
-The repository includes a `.pre-commit-config.yaml` file and if you want linting or formatting to run automatically before each commit, run:
-
-```powershell
+```bash
 pre-commit install
 ```
 
-This command installs a local Git hook for your clone only. It does not replace normal Git commands.
-
 After installing the hook, the workflow is still:
 
-```powershell
+```bash
 git add .
 git commit -m "your message"
 git push
 ```
 
-The difference is that `pre-commit` will run automatically when `git commit` starts. If the checks pass, the commit continues as normal. If a hook finds an issue or rewrites files, the commit may stop so you can review the changes, run `git add .` again if needed, and re-run `git commit`.
-
 Installing `pre-commit` from `requirements.txt` only installs the Python package. Each teammate must still run `pre-commit install` once in their own local clone if they want the hook to run automatically on commit.
-
-## What each step does
-
-- `py -m venv .venv` creates a local virtual environment.
-- `.venv\Scripts\Activate` activates it.
-- `pip install -r requirements.txt` installs the project dependencies.
-- `pip uninstall ...` removes any non-CUDA PyTorch packages that may have been installed from `requirements.txt`.
-- `pip install ... --index-url https://download.pytorch.org/whl/cu128` reinstalls PyTorch with CUDA 12.8 support.
-- The final `python -c` command checks the installed Torch version, CUDA build, and whether a GPU is visible.
-- `pre-commit install` installs the local Git hook that runs configured checks before `git commit`.
 
 ## Verify CUDA
 
-A successful verification usually shows:
+A successful Windows CUDA verification usually shows:
 
 - a Torch version
 - `cuda build: 12.8`
@@ -78,3 +110,4 @@ If `cuda available` is `False`, the most common causes are:
 - `requirements.txt` includes the main project dependencies, including `torch==2.10.0` and `torchvision==0.25.0`. The CUDA reinstall step replaces those with the CUDA-enabled builds for Windows.
 - After activation, use the virtual environment's Python for running the project and tests.
 - `pre-commit` is optional. If you do not install the hook, Git still works normally and checks must be run manually.
+- The helper modules `id_flicker_mitigation.py`, `output_formatter.py`, `world_projection.py`, `adaptive_tuning.py`, and `motion_smoothing.py` keep their Python filenames but now delegate hot-path work to `xrdrone_native`.
