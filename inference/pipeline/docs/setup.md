@@ -111,3 +111,4 @@ If `cuda available` is `False`, the most common causes are:
 - After activation, use the virtual environment's Python for running the project and tests.
 - `pre-commit` is optional. If you do not install the hook, Git still works normally and checks must be run manually.
 - The helper modules `id_flicker_mitigation.py`, `output_formatter.py`, `world_projection.py`, `adaptive_tuning.py`, and `motion_smoothing.py` keep their Python filenames but now delegate hot-path work to `xrdrone_native`.
+- The native source is organized across `src/lib.rs`, `src/common.rs`, `src/geometry.rs`, `src/id_flicker.rs`, `src/world_projection.rs`, `src/udp.rs`, `src/adaptive_tuning.rs`, and `src/smoothing.rs`. Rebuild the extension after changes to any of those files.

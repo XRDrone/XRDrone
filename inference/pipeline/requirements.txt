@@ -47,4 +47,4 @@ ultralytics-thop==2.0.18
 urllib3==2.6.3
 virtualenv==21.2.0
 wheel==0.46.3
--e git+https://github.com/XRDrone/XRDrone@eece2db9356c37783f9f4cd4da694d2a0b22941b#egg=xrdrone_native&subdirectory=inference/pipeline
+-e git+https://github.com/XRDrone/XRDrone@1fcc43534903ec166f8c5141a111028a54be48d2#egg=xrdrone_native&subdirectory=inference/pipeline

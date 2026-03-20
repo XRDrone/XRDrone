@@ -26,6 +26,17 @@ Several hot-path helper modules keep their original Python filenames but are bac
 - `adaptive_tuning.py`
 - `motion_smoothing.py`
 
+The Rust implementation is now split into focused source files under `src/` instead of keeping everything in one monolithic `lib.rs`:
+
+- `src/lib.rs`: Python module registration only
+- `src/common.rs`: shared Python interop helpers, clamps, parsing, and history utilities
+- `src/geometry.rs`: matrix, quaternion, projection, and filter math helpers
+- `src/id_flicker.rs`: tracked-object continuity and coasting
+- `src/world_projection.rs`: foot-point extraction and world-ground projection
+- `src/udp.rs`: Unity UDP packet formatting
+- `src/adaptive_tuning.rs`: bounded runtime tuning controller
+- `src/smoothing.rs`: One Euro filters plus pose and world-track smoothing
+
 Before running `main.py` or `test_with_coverage.py`, build the native module in your active virtual environment:
 
 ```bash
@@ -33,7 +44,7 @@ bash build_native.sh
 python -c "import xrdrone_native; print('ok')"
 ```
 
-If `src/lib.rs` or `Cargo.toml` changes, rebuild the extension.
+If any file in `src/` or `Cargo.toml` changes, rebuild the extension.
 
 ## Documentation Files
 

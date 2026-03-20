@@ -178,7 +178,7 @@ The mode inside brackets can be:
 - `low_trust`
 - `recovering`
 
-These mode decisions come from `AdaptiveRuntimeTuner._choose_mode()` in `adaptive_tuning.py`.
+These mode decisions come from the native `AdaptiveRuntimeTuner::choose_mode()` implementation in `src/adaptive_tuning.rs`.
 The tuner checks modes in this priority order:
 
 1. `low_trust`
@@ -208,7 +208,7 @@ That order matters. For example, if the system is noisy enough to qualify as `ji
 
 ### Exact conditions for switching modes
 
-All thresholds below come from `adaptive_tuning.py`.
+All thresholds below come from `src/adaptive_tuning.rs`.
 
 #### `low_trust`
 The tuner switches to `low_trust` if **any one** of these is true:
@@ -252,7 +252,7 @@ Operationally, this is the in-between state where the controller steps values ba
 
 ### What each mode changes
 
-These target adjustments come from `AdaptiveRuntimeTuner.propose_adjustment()` in `adaptive_tuning.py`.
+These target adjustments come from `AdaptiveRuntimeTuner::propose_adjustment()` in `src/adaptive_tuning.rs`.
 
 #### `stable`
 - `smooth` target: `max(motion_smoothing_min, base_motion_smoothing - 0.10)`
@@ -280,7 +280,7 @@ These target adjustments come from `AdaptiveRuntimeTuner.propose_adjustment()` i
 
 ### How quickly a mode change can take effect
 
-The mode logic is not evaluated continuously every frame without delay. The tuner has three built-in timing gates in `adaptive_tuning.py`:
+The mode logic is not evaluated continuously every frame without delay. The tuner has three built-in timing gates in `src/adaptive_tuning.rs`:
 
 - `window_frames`: rolling-history length used for the recent metrics
 - `update_interval_frames`: the controller only proposes a change when `frame_count % update_interval_frames == 0`
@@ -295,43 +295,35 @@ So the controller reacts on a rolling, bounded cadence rather than instantaneous
 
 ### Estimated motion-smoothing lag by mode
 
-The parameters that control the tuner-side smoothing amount come from `adaptive_tuning.py`:
+The tuner-side smoothing value still comes from `src/adaptive_tuning.rs`, but the actual smoothing implementation is now visible in `src/smoothing.rs` and the smoothness-to-filter-parameter mapping lives in `src/geometry.rs`.
 
-- `base_motion_smoothing`
-- `motion_smoothing_min`
-- `motion_smoothing_max`
-- `motion_smoothing_step`
-
-The uploaded files show **what smoothing value the tuner targets**, but they do **not** include the separate implementation file that actually applies the smoothing filter to motion. Because of that, the exact physical lag in frames or milliseconds cannot be proven from the uploaded files alone.
-
-The estimates below assume a common first-order smoothing pattern where higher `smooth` means more carryover from the previous frame. Under that assumption, a practical rule of thumb is:
+The pose smoother uses One Euro filters, not a simple fixed-frame carryover. The relevant formulas are:
 
 ```text
-estimated lag (frames) ≈ smooth / (1 - smooth)
-estimated lag (ms) ≈ 1000 * estimated_lag_frames / fps
+position min_cutoff_hz = 3.5 - 3.1 * smoothness
+position beta          = 0.03 + 0.32 * smoothness
+rotation min_cutoff_hz = 4.5 - 3.8 * smoothness
+rotation beta          = 0.04 + 0.42 * smoothness
+alpha(cutoff, dt)      = 1 / (1 + tau / dt), where tau = 1 / (2π * cutoff)
 ```
 
-Using that approximation, the four modes rank like this:
+That means higher `smooth` lowers the minimum cutoff and raises `beta`. In practice, that makes the filter more willing to damp slow motion and more willing to open up when motion speed increases. So the lag is **state dependent** and changes with runtime motion, not just with the configured mode.
 
-- `stable`: **lowest lag** because it pushes `smooth` downward by about `0.10` from base
-- `recovering`: **baseline lag** because it aims at `base_motion_smoothing`
-- `low_trust`: **moderately increased lag** because it raises `smooth` by about `0.10` from base
-- `jittery_visible`: **highest lag** because it raises `smooth` by about `0.15` from base
+Even with that limitation, the mode ordering is still clear from the code:
+
+- `stable`: lowest expected lag because it targets the lowest smoothing value
+- `recovering`: baseline lag because it returns to `base_motion_smoothing`
+- `low_trust`: moderately higher lag because it raises smoothing above base
+- `jittery_visible`: highest expected lag because it raises smoothing the most
 
 Example only, assuming `base_motion_smoothing = 0.50`:
 
-- `stable` -> target `smooth ≈ 0.40` -> estimated lag `≈ 0.67` frames
-- `recovering` -> target `smooth ≈ 0.50` -> estimated lag `≈ 1.00` frame
-- `low_trust` -> target `smooth ≈ 0.60` -> estimated lag `≈ 1.50` frames
-- `jittery_visible` -> target `smooth ≈ 0.65` -> estimated lag `≈ 1.86` frames
+- `stable` -> target `smooth = 0.40` -> position params `min_cutoff_hz = 2.26`, `beta = 0.158`; rotation params `min_cutoff_hz = 2.98`, `beta = 0.208`
+- `recovering` -> target `smooth = 0.50` -> position params `min_cutoff_hz = 1.95`, `beta = 0.190`; rotation params `min_cutoff_hz = 2.60`, `beta = 0.250`
+- `low_trust` -> target `smooth = 0.60` -> position params `min_cutoff_hz = 1.64`, `beta = 0.222`; rotation params `min_cutoff_hz = 2.22`, `beta = 0.292`
+- `jittery_visible` -> target `smooth = 0.65` -> position params `min_cutoff_hz = 1.49`, `beta = 0.238`; rotation params `min_cutoff_hz = 2.03`, `beta = 0.313`
 
-At `30 FPS`, those examples are approximately:
-
-- `stable` -> `~22 ms`
-- `recovering` -> `~33 ms`
-- `low_trust` -> `~50 ms`
-- `jittery_visible` -> `~62 ms`
-
+Because One Euro filters adapt to signal speed, exact lag in milliseconds is not a single constant that can be read directly from the config alone. The honest interpretation is that higher modes increase damping and therefore usually increase apparent lag, but the actual delay depends on frame rate and how quickly the pose is moving at that moment.
 Also note that the tuner does not jump straight to the target in one step unless the current value is already close. It moves by `motion_smoothing_step`, so the full transition into a new mode can take several update cycles.
 
 ---
@@ -445,7 +437,7 @@ When you see `[hold]` appended to a tracked object label, it means the ID-flicke
 
 This visible state is tied to the continuity layer's coast duration.
 
-The runtime value is printed as `coast=<N>` in the adaptive tuning log line, and the tuner-side parameters visible in `adaptive_tuning.py` are:
+The runtime value is printed as `coast=<N>` in the adaptive tuning log line, and the tuner-side parameters visible in `src/adaptive_tuning.rs` are:
 
 - `current_coast_frames`
 - `base_coast_frames`
@@ -477,7 +469,7 @@ Internally, `coasted` is the continuity-state name for a held-forward track. The
 
 `coasted` lasts for the **same duration** as `[hold]`, because `[hold]` is just the visible rendering of that internal state.
 
-So, from the uploaded tuner code, the duration is controlled indirectly by the current continuity coast budget, with the relevant tuner-side parameters in `adaptive_tuning.py` being:
+So, from `src/adaptive_tuning.rs`, the duration is controlled indirectly by the current continuity coast budget, with the relevant tuner-side parameters being:
 
 - `current_coast_frames`
 - `base_coast_frames`
