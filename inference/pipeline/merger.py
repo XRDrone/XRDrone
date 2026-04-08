@@ -16,7 +16,8 @@ Also provides:
 """
 
 from __future__ import annotations
-from typing import Any, Dict, List
+
+from typing import Any
 
 import numpy as np
 
@@ -27,7 +28,7 @@ def merge_detections(
     *,
     people_model,
     fire_model,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Merge detections from people_results and fire_results into a unified list.
     - people_results, fire_results: Ultralytics Results lists from .predict(...)
@@ -35,7 +36,7 @@ def merge_detections(
 
     Returns: list of detection dicts.
     """
-    dets: List[Dict[str, Any]] = []
+    dets: list[dict[str, Any]] = []
 
     def _safe_track_ids(boxes_obj):
         """Return a CPU numpy array of track IDs aligned with boxes, or None."""
@@ -115,9 +116,9 @@ def merge_detections(
     return dets
 
 
-def count_by_class(detections: List[Dict[str, Any]]) -> Dict[str, int]:
+def count_by_class(detections: list[dict[str, Any]]) -> dict[str, int]:
     """Utility: count detections by class label."""
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for d in detections:
         c = d["class"]
         counts[c] = counts.get(c, 0) + 1

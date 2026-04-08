@@ -14,6 +14,7 @@ Used for:
   - Demo HUD visuals
   - Presentation layer enhancements
 """
+
 from __future__ import annotations
 
 import cv2

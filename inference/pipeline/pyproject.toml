@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "xrdrone-native"
+version = "0.1.0"
+description = "Rust acceleration for XRDrone pipeline helpers"
+requires-python = ">=3.10"
+
+[tool.maturin]
+module-name = "xrdrone_native"
+bindings = "pyo3"

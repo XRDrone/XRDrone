@@ -1,234 +1,237 @@
-# Contributing Guide
+# Contributing
 
-How to set up, code, test, review, and release so contributions meet our Definition of Done.
+Thank you for contributing to XRDrone. This document describes the workflow for development, testing, documentation updates, and submitting pull requests.
 
-## Code of Conduct
-
-Project members will be expected to exhibit behavior as outlined in OSU's Code of Student Conduct  
-If any member fails to uphold this standard, please report the act to Student Community Standards  
-https://scs.oregonstate.edu/
-
-## Getting Started
-
-Prerequisites: 
-
-- Unity 6000.60f1 LTS 
-- Python 3.13.3   
-- python -m pip install -r requirements.txt # in inference/pipeline/requirements.txt
- 
-## Branching & Workflow
-
-Our GitHub workflow is trunk-based. The default branch is main.  
-Project member are expected to create a seperate branch and merge it with main at the end of each working day.  
-### Naming Conventions
-- feature/feature-name  
-- user/description  
-- bug/description  
-### Merge vs Rebase
-Members should only rebase their branch if an unrelated change has been made to main that does not conflict with their code.  
-Otherwise project members should merge.  
-
-## Project
-
-Maintain project in GitHub for easy tracking of issues and update for additional tasks/assignments.
-
-## Issues & Planning
-
-Explain how to file issues, required templates/labels, estimation, and triage/assignment practices.
-
-All work is tracked through **GitHub Issues** and organized into the **XRDrone Project Board** (`/projects/1`).
-
-Each issue **must use a template** and include description, scope, and acceptance criteria referencing requirements (e.g. `[REQ-003]`).
+The repository uses a docs-first structure, so detailed documentation lives in the `docs/` directory rather than in the top-level README.
 
 ---
 
-#### Filing Issues
+# 1. Development Environment
 
-1) **Issues → New Issue → pick template**  
-   (Bug Report / Feature Request / Task)
+Before contributing, set up both the Python environment and the Rust native build used by the mixed Python + Rust pipeline.
 
-2) Include:
+Recommended steps:
 
-| Field | Expectation |
-|---|---|
-| **Title** | short + action based (`“Reduce latency below 300 ms [REQ-003]”`) |
-| **Description** | concise problem summary + expected vs actual |
-| **Steps to Reproduce** | for bugs |
-| **Acceptance Criteria** | for features |
-| **Screenshots / Logs** | if relevant |
+```bash
+python3 -m venv yolovenv
+source yolovenv/bin/activate
+pip install -r requirements.txt
+bash build_native.sh
+python -c "import xrdrone_native; print('ok')"
+```
 
----
+If CUDA support is required on Windows:
 
-#### Labels
+```powershell
+pip uninstall torch torchvision torchaudio -y
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+bash build_native.sh
+```
 
-| Category | Examples |
-|---|---|
-| **type** | `type:bug`, `type:feature`, `type:task` |
-| **priority** | `prio:P0` (critical) → `P2` (minor) |
-| **area** | `area:stream`, `area:vision`, `area:hud`, `area:infra` |
-| **status** | `status:in-progress`, `status:blocked`, `status:review` |
+See: `docs/setup.md`
 
----
-
-#### Estimation
-
-Effort levels:
-
-| Code | Meaning |
-|---|---|
-| `S` | ≤ 1 day |
-| `M` | 2–3 days |
-| `L` | > 3 days |
-
-Estimation is added by **assignee** and confirmed during **team review**.
+Each contributor must build the native module in their own local clone and active virtual environment.
 
 ---
 
-#### Triage & Assignment
+# 2. Repository Documentation
 
-- Weekly triage in **Friday team sync**
-- Blocked issues → escalate to mentor if 48h unresolved
-- Closed issues **must** link PR (`Closes #42`) and reference ≥1 requirement ID
+Main documentation files:
 
-## Commit Messages
+- `docs/setup.md` – environment setup, native build, and verification
+- `docs/settings.md` – runtime configuration settings
+- `docs/udp-json.md` – UDP packet schema used for Unity communication
+- `docs/runtime-ui-and-terminal-reference.md` – runtime overlay and terminal text reference
+- `docs/testing.md` – UDP validation and testing procedures
 
-State the convention (e.g., Conventional Commits), include examples, and how to reference issues.
+Contributors should review these files before making structural changes.
 
-We use the **Conventional Commits** format to maintain clear traceability between commits, pull requests, and project requirements (REQ-001 – REQ-010).
+---
 
-**Format:**  
-`<type>(<scope>): <short summary> [REQ-###]`
+# 3. Code Style
 
-**Common Types**
-- feat – new feature (e.g., streaming, detection, HUD)
-- fix – bug fix or patch
-- perf – performance or latency optimization
-- refactor – non-functional code rework
-- test – add or update tests
-- docs – documentation or diagrams
-- chore – maintenance or build updates
+The repository uses Ruff for Python linting and formatting.
 
-**Examples**
-- feat(stream): implement 720p video pipeline [REQ-001]
-- perf(stream): maintain ≥24 FPS target for Quest [REQ-002]
-- fix(latency): reduce glass-to-glass delay to ≤300 ms [REQ-003]
-- feat(vision): enable on-device detection for fire/smoke/humans [REQ-004]
-- perf(model): retrain YOLOv8 to reach ≥0.5 F1 on 150 frames [REQ-005]
-- docs(ethics): confirm no PII storage, opt-in recording only [REQ-006]
-- feat(hud): add altitude and position overlays in VR [REQ-007]
-- feat(hud): display FPS, latency, and battery metrics [REQ-008]
-- feat(vision): visually mark low-confidence detections [REQ-009]
-- fix(stability): auto-recover after forced disconnect [REQ-010]
+Run before committing:
 
-**Referencing Issues**
-Include issue or PR links in the footer:
-- Closes #42
-- Relates to #57
+```bash
+ruff check .
+ruff format .
+```
 
-## Code Style, Linting & Formatting
+Optional automatic hook:
 
-Name the formatter/linter, config file locations, and the exact commands to check/fix locally.
+```bash
+pre-commit install
+```
 
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves. 
+Rust changes should also compile cleanly through the project build script:
 
-## Testing
+```bash
+bash build_native.sh
+```
 
-Define required test types, how to run tests, expected coverage thresholds, and when new/updated tests are mandatory.
+---
 
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves. 
+# 4. Native Module Workflow
 
-## Pull Requests & Reviews
+The files below keep their Python filenames but are backed by the `xrdrone_native` extension after build:
 
-<details>
-<summary>PR Template</summary>
-PR Name
+- `id_flicker_mitigation.py`
+- `output_formatter.py`
+- `world_projection.py`
+- `adaptive_tuning.py`
+- `motion_smoothing.py`
 
- Description  
- - Briefly describe the purpose of this pull request.
-  
- Related Issue  
- - Link to any related GitHub issue(s).
-  
- Testing  
- - Describe how you tested your changes (e.g., screenshots, logs, build output).
- 
- Checklist
- - [ ] Code builds and runs locally
- - [ ] Feature branch follows naming convention (feature/<description>)
- - [ ] Changes reviewed by at least one teammate
- - [ ] Documentation updated (if needed)
- - [ ] No sensitive data or credentials committed
-</details>
+Rebuild the native module whenever these inputs change:
 
+- `src/lib.rs`
+- `Cargo.toml`
+- Rust/PyO3 build settings
+- Python wrappers that expect newly added Rust symbols
 
-Reviewer Expectations:  
-Reviewers are expected to run the branch's code on their PC to make sure it is working correctly.  
-Reviewers are expected to provide a comment with a reason if they do not approve a PR.  
-Reviewers are expected to ensure the branch does not unintentionally remove items from the main branch.  
+Standard rebuild command:
 
-Approval Rules:  
-Pull Request reviewed by one member (besides the one who submitted it)
+```bash
+source yolovenv/bin/activate
+bash build_native.sh
+```
 
-Required Status Checks:  
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves.
+Do not treat `target/` or other local build output as source files to commit.
 
-## CI/CD
+---
 
-Link to pipeline definitions, list mandatory jobs, how to view logs/re-run jobs, and what must pass before merge/release.
+# 5. Branch Workflow
 
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves.
+Create a feature branch:
 
-## Security & Secrets
+```bash
+git checkout -b feature/your-feature
+```
 
-Do NOT commit: 
+Make your changes, run checks, then commit:
 
-- .env files 
+```bash
+git add .
+git commit -m "Short descriptive message"
+```
 
-- API keys (DJI, YOLO, etc.) 
+Push the branch:
 
-Secrets go to GitHub Secrets. 
+```bash
+git push origin feature/your-feature
+```
 
-To report vulnerability: DM on Teams. 
+Then open a Pull Request.
 
-## Documentation Expectations
+---
 
-Specify what must be updated (README, docs/, API refs, CHANGELOG) and docstring/comment standards.
+# 6. Testing Changes
 
-All contributions must include relevant documentation updates to keep the project reproducible and maintainable. Documentation changes are part of the Definition of Done and required before merge.
+Testing instructions are documented in `docs/testing.md`.
 
-**What to Update**
-- README.md — add or revise setup steps, usage instructions, or build/run commands affected by your change
-- /docs/ directory — update design diagrams, architecture notes, or benchmark reports (latency, FPS, F1, etc.)
-- CHANGELOG.md — add an entry under the current release version describing user-facing changes
-- API references — update function/class documentation if new public interfaces are added or modified
+Typical validation workflow:
 
-**Style Guidelines**
-- keep language concise and instructional  
-- document why and how — not just what  
-- ensure code snippets are executable or valid pseudocode  
-- update diagrams/logs in /docs/ whenever architecture, model, or performance metrics change
+1. Build the native module (`bash build_native.sh`)
+2. Run the pipeline (`python main.py`)
+3. Verify detections and pose behavior
+4. Confirm UDP packets match schema
+5. Confirm Unity receives detections and pose data
 
-**Verification**
-- every PR must include a doc update if functionality, configuration, or metrics change  
-- reviewers verify that doc updates match the implemented behavior and that CHANGELOG entries follow version format:  
-  `## [X.Y.Z] – YYYY-MM-DD`
+Algorithm changes should include a reproducible demonstration.
 
-**Definition of Done**
-- Builds without errors
-- Meets requirement IDs
-- Tests pass
-- Documentation updated
-- Approved PR
+---
 
-## Release Process
+# 7. UDP JSON Protocol Changes
 
-Describe versioning scheme, tagging, changelog generation, packaging/publishing steps, and rollback process.
+Changes to the UDP schema must:
 
-Due to current implementation limitations, this requirement cannot yet be fully addressed. We’ve documented the constraint and plan to revisit it as the system evolves. 
+1. Be documented in `docs/udp-json.md`
+2. Maintain compatibility with Unity when possible
+3. Be validated using `test_with_coverage.py`
 
-## Support & Contact
+Unity components depend on this schema remaining stable.
 
-Questions? Contact: 
-- Teams group chat 
-- GitHub Issues (tag as “question”) 
-- Typical response time: under 24 hours 
+---
+
+# 8. Configuration Changes
+
+Runtime behavior is controlled by `settings.py`.
+
+Examples:
+
+- detection thresholds
+- smoothing parameters
+- pose configuration
+- adaptive tuning parameters
+
+If new configuration options are added:
+
+1. Add them to `settings.py`
+2. Document them in `docs/settings.md`
+3. Provide default values
+
+If a change is implementation-only and preserves the current Python-facing settings contract, document the behavior where relevant without renaming existing settings unnecessarily.
+
+---
+
+# 9. Documentation Updates
+
+Documentation must stay synchronized with implementation.
+
+Update documentation when:
+
+- pipeline behavior changes
+- settings are added or removed
+- runtime overlays or terminal outputs change
+- UDP packet structure changes
+- setup or build steps change
+- native build requirements change
+
+Relevant documentation:
+
+- `docs/setup.md`
+- `docs/settings.md`
+- `docs/udp-json.md`
+- `docs/runtime-ui-and-terminal-reference.md`
+- `docs/testing.md`
+
+---
+
+# 10. Pull Request Requirements
+
+Before submitting a PR ensure:
+
+- Python code passes `ruff check`
+- Python code is formatted with `ruff format`
+- `bash build_native.sh` succeeds
+- the pipeline runs without runtime errors
+- documentation is updated if behavior changes
+- no unnecessary files are committed
+
+Do not commit:
+
+- `.DS_Store`
+- `__pycache__/`
+- `target/`
+- temporary media files
+- local environment folders
+- editor-specific local files
+
+---
+
+# 11. Commit Message Guidelines
+
+Examples:
+
+- `Add motion smoothing for ArUco pose updates`
+- `Optimize UDP packet serialization`
+- `Implement adaptive runtime tuning`
+- `Port hot-path helper modules to Rust`
+- `Update documentation for native build workflow`
+
+---
+
+# 12. Questions
+
+If unsure about architecture decisions or major pipeline changes, open an issue before implementing large modifications.

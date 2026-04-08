@@ -17,12 +17,13 @@ Handles:
   - FFmpeg process spawning and restart logic
   - resolution changes during runtime
 """
+
 from __future__ import annotations
 
 import json
 import socket
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 import settings as S
@@ -33,7 +34,7 @@ except Exception:  # pragma: no cover
     orjson = None  # type: ignore
 
 
-def _encode_json_bytes(obj: Dict[str, Any]) -> bytes:
+def _encode_json_bytes(obj: dict[str, Any]) -> bytes:
     """
     Encode a packet to UTF-8 JSON bytes without changing the JSON structure.
     Uses orjson when enabled and available, otherwise falls back to compact stdlib JSON.
@@ -57,7 +58,7 @@ class UDPPublisher:
         self.port = int(port)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    def send_json(self, obj: Dict[str, Any]) -> None:
+    def send_json(self, obj: dict[str, Any]) -> None:
         msg = _encode_json_bytes(obj)
         self.sock.sendto(msg, (self.ip, self.port))
 
@@ -77,9 +78,9 @@ class RTSPStreamer:
     def __init__(self, rtsp_url: str, fps: float) -> None:
         self.rtsp_url = rtsp_url
         self.fps = float(fps)
-        self.proc: Optional[subprocess.Popen] = None
-        self.width: Optional[int] = None
-        self.height: Optional[int] = None
+        self.proc: subprocess.Popen | None = None
+        self.width: int | None = None
+        self.height: int | None = None
 
     def _start(self, width: int, height: int) -> None:
         # ffmpeg reads raw bgr24 frames from stdin and publishes to RTSP.

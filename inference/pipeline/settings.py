@@ -4,10 +4,11 @@ XRDrone local pipeline settings.
 This file centralizes all runtime configuration for the local YOLO
 inference demo (video source, model paths, thresholds, HUD, logging, keys,
 and network streaming).
-Edit values here; main.py should not contain hard-coded settings.
+Edit tunable values here; fixed optimized pipeline policy is intentionally hard-coded in main.py.
 """
 
 from __future__ import annotations
+
 import torch
 
 # -----------------------------
@@ -47,9 +48,7 @@ UNITY_CLASS_ID = {
 
 UDP_MIN_CONF = 0.80
 
-UDP_SEND_CLASSES = (
-    "person",
-)
+UDP_SEND_CLASSES = ("person",)
 
 # -----------------------------
 # Logging
@@ -98,43 +97,33 @@ PEOPLE_ON_DEFAULT = True
 FIRE_ON_DEFAULT = False
 RECORDING_ENABLED_DEFAULT = False
 
-# Persistent multi-object tracking (stable IDs)
-TRACKING_ENABLED_DEFAULT = True
-
-# Choose tracker backend:
-#  - "opencv": lightweight Kalman+IoU tracker in tracker.py
-#  - "ultralytics": Ultralytics built-in trackers (BoT-SORT/ByteTrack)
-TRACKING_METHOD = "ultralytics"  # "opencv" | "ultralytics"
-
-# OpenCV tracker tuning
-TRACK_MIN_IOU = 0.30
-TRACK_MAX_AGE_FRAMES = 120  # how long an object can be missing and still keep its ID
-TRACK_PER_CLASS = True
-TRACK_KF_PROCESS_NOISE = 1e-2
-TRACK_KF_MEAS_NOISE = 1e-1
-
-# Matching backend for the OpenCV tracker.
-TRACK_MATCHING_METHOD = "hungarian"  # "hungarian" | "greedy"
-TRACK_MIN_MATCH_SCORE = 0.45
-TRACK_MAX_FOOT_DISTANCE_NORM = 0.08
-TRACK_MAX_WORLD_DISTANCE_M = 2.5
-TRACK_USE_WORLD_POSITION = True
-TRACK_WORLD_SCORE_WEIGHT = 0.65
-TRACK_IOU_SCORE_WEIGHT = 0.25
-TRACK_FOOT_SCORE_WEIGHT = 0.10
-
-# Ultralytics tracker config (only used when TRACKING_METHOD="ultralytics")
-# Ultralytics supports "botsort.yaml" (default) and "bytetrack.yaml".
-ULTRALYTICS_TRACKER = "botsort_drone.yaml"
-
-# If you use separate trackers per model (people vs fire), offsets prevent ID collisions.
+# Tracking is now fixed in the pipeline to use the optimized Ultralytics
+# tracking path. These remaining values only affect downstream formatting.
 TRACK_ID_OFFSET_PEOPLE = 0
 TRACK_ID_OFFSET_FIRE = 1_000_000
-
-# Draw per-instance IDs on the output frame (useful for demos)
 DRAW_TRACK_IDS = True
 
 DRAW_DETECTIONS_DEFAULT = True
+
+# -----------------------------
+# Robust mitigation of Object-ID flicker in UDP JSON streams
+# -----------------------------
+# The continuity layer itself is fixed on in the pipeline.
+# These remain as tuning controls for the hard-coded path.
+ID_FLICKER_APPLY_CLASSES = ("person",)
+
+# Confidence gate:
+#   new IDs must reach tau_on
+#   existing emitted IDs can persist down to tau_off
+ID_FLICKER_EMA_ALPHA = 0.45
+ID_FLICKER_TAU_ON = 0.80
+ID_FLICKER_TAU_OFF = 0.55
+
+# Keep emitting a recently seen ID for a short time even when detections dip
+# or one/few frames are missed.
+ID_FLICKER_COAST_FRAMES = 6
+ID_FLICKER_DROP_FRAMES = 45
+ID_FLICKER_COAST_CONF_DECAY = 0.985
 
 # -----------------------------
 # Pose estimation (camera pose via ArUco)
@@ -154,9 +143,7 @@ POSE_ARUCO_DICT = "DICT_4X4_50"
 
 # Marker world positions in meters (origin at marker id 0 by default).
 # Each value is (x, y, z). The pose solver assumes markers lie on the Y=0 plane.
-POSE_MARKER_WORLD_POSITIONS = {
-    0: (0.0, 0.0, 0.0)
-}
+POSE_MARKER_WORLD_POSITIONS = {0: (0.0, 0.0, 0.0)}
 
 # Solver policy:
 #   - "auto": use single-marker when only one known marker is visible,
@@ -173,18 +160,24 @@ POSE_MULTI_INIT_SOLVER = "sqpnp"  # "sqpnp" | "ransac" | "iterative" | "ippe_squ
 
 # Nonlinear refinement run after the initializer.
 POSE_REFINER = "vvs"  # "vvs" | "lm" | "none"
-POSE_ENABLE_REFINEMENT = True
 
 # Minimum known visible markers required to enter the multi-marker board path.
 POSE_MIN_MARKERS_FOR_MULTI = 2
 
 # Optional ArUco detector corner refinement.
-POSE_CORNER_REFINEMENT = "none"  # "none" | "subpix" | "contour" | "apriltag"
+POSE_CORNER_REFINEMENT = "apriltag"  # "none" | "subpix" | "contour" | "apriltag"
 
 # RANSAC tuning for the multi-marker initializer (and optional single-marker fallback).
 POSE_RANSAC_REPROJ_THRESHOLD_PX = 4.0
 POSE_RANSAC_CONFIDENCE = 0.99
 POSE_RANSAC_ITERATIONS = 100
+
+# Explicit pose-loss fallback when no known marker corners are visible is fixed on in the pipeline.
+# During the short hold timeout, the last valid pose numbers are preserved,
+# but pose_valid remains False and registration stays unavailable.
+POSE_LOSS_HOLD_TIMEOUT_S = 0.35
+POSE_LOSS_PRESERVE_LAST_NUMBERS_DURING_HOLD = True
+POSE_LOSS_CLEAR_NUMBERS_AFTER_TIMEOUT = True
 
 # If True, draw detected ArUco markers on the output frame.
 POSE_DRAW_ARUCO = False
@@ -197,6 +190,47 @@ POSE_MODE_OVERLAY_TEXT_SCALE = 0.9
 POSE_MODE_OVERLAY_TEXT_THICKNESS = 2
 
 # -----------------------------
+# Motion smoothing (ArUco-based object registration)
+# -----------------------------
+# Single 0..1 slider used by both layers:
+#   0.0 = raw / most responsive
+#   1.0 = smoothest / most damped
+MOTION_SMOOTHING = 0.50
+MOTION_SMOOTHING_STEP = 0.05
+MOTION_SMOOTHING_DERIVATIVE_CUTOFF_HZ = 1.0
+MOTION_SMOOTHING_RESET_TIMEOUT_S = 0.75
+
+# Motion smoothing is fixed on in the pipeline for both pose and world-space filtering.
+WORLD_MOTION_SMOOTHING_MAX_TRACK_AGE_S = 1.50
+
+# -----------------------------
+# Adaptive runtime tuning
+# -----------------------------
+# Bounded runtime adaptation for smoothing + ID flicker mitigation only.
+# This does NOT change physical marker layout, Unity class mapping, the UDP schema,
+# or the structural ArUco solver-selection policy.
+ADAPTIVE_TUNING_ENABLED = True
+ADAPTIVE_TUNING_LOG_UPDATES = True
+ADAPTIVE_TUNING_TARGET_CLASSES = ("person",)
+ADAPTIVE_TUNING_WINDOW_FRAMES = 45
+ADAPTIVE_TUNING_UPDATE_INTERVAL_FRAMES = 15
+ADAPTIVE_TUNING_COOLDOWN_FRAMES = 30
+ADAPTIVE_TUNING_IOU_MATCH_THRESHOLD = 0.35
+
+ADAPTIVE_MOTION_SMOOTHING_MIN = 0.30
+ADAPTIVE_MOTION_SMOOTHING_MAX = 0.85
+ADAPTIVE_MOTION_SMOOTHING_STEP = 0.05
+
+ADAPTIVE_ID_TAU_ON_MIN = 0.75
+ADAPTIVE_ID_TAU_ON_MAX = 0.90
+ADAPTIVE_ID_TAU_OFF_MIN = 0.45
+ADAPTIVE_ID_TAU_OFF_MAX = 0.65
+ADAPTIVE_ID_TAU_STEP = 0.02
+ADAPTIVE_ID_COAST_FRAMES_MIN = 3
+ADAPTIVE_ID_COAST_FRAMES_MAX = 10
+ADAPTIVE_ID_COAST_STEP = 1
+
+# -----------------------------
 # Mask rendering
 # -----------------------------
 MASK_ALPHA = 0.35
@@ -205,12 +239,6 @@ MASK_TEXT_THICKNESS = 2
 
 COLORS = {
     "person": (255, 255, 0),
-    "item": (255, 0, 0),
-    "fire": (255, 0, 255),
-    "smoke": (0, 255, 255),
-    "chair": (0, 200, 0),
-    "couch": (200, 0, 0),
-    "dining table": (0, 165, 255),
 }
 
 # -----------------------------
@@ -232,6 +260,9 @@ KEY_TOGGLE_DRAW = (ord("v"), ord("V"))
 KEY_TOGGLE_DJI_OVERLAY = (ord("u"), ord("U"))
 KEY_TOGGLE_TRACKING = (ord("t"), ord("T"))
 KEY_TOGGLE_POSE_MODE_OVERLAY = (ord("m"), ord("M"))
+KEY_TOGGLE_MOTION_SMOOTHING = (ord("g"), ord("G"))
+KEY_DECREASE_MOTION_SMOOTHING = (ord("["), ord("{"))
+KEY_INCREASE_MOTION_SMOOTHING = (ord("]"), ord("}"))
 
 # -----------------------------
 # Test mode
