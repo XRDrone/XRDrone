@@ -1,8 +1,8 @@
 # UDP JSON Structure
 
-This document describes the UDP JSON packet structure used by the human-detection branch of the pipeline. The packet contains frame metadata and image-space detection data only. It does not include pose data or world-coordinate projection fields.
+This document describes the UDP JSON packet structure used by the human-detection branch.
 
-## Top-Level Packet Example
+## Packet Sample
 
 ```json
 {
@@ -19,8 +19,8 @@ This document describes the UDP JSON packet structure used by the human-detectio
       "cy": 0.6266968056007668,
       "w": 0.6039250691731771,
       "h": 0.7393832171404803,
-      "foot_x": 0.0,
-      "foot_y": 0.0
+      "foot_x": 0.4600933710734049,
+      "foot_y": 0.9963888888888889
     }
   ]
 }
@@ -29,43 +29,37 @@ This document describes the UDP JSON packet structure used by the human-detectio
 ## Top-Level Fields
 
 ### `frame_id`
-Integer frame counter for the emitted packet.
-
-Consumers can use this to align detections with the source frame sequence.
+Sequential frame counter from the pipeline loop. Increments by `1` per processed frame.
 
 ### `timestamp`
-Floating-point UNIX timestamp in seconds for the frame.
-
-Used to align detections with video time.
+Wall-clock time in Unix epoch seconds, including fractional precision, when the frame was processed.
 
 ### `width`, `height`
-Integer dimensions of the frame used to generate the packet.
+Frame resolution in pixels.
 
 These values are used to interpret normalized image-space quantities such as `cx`, `cy`, `w`, `h`, `foot_x`, and `foot_y`.
 
 ### `detections`
-Array of detection objects that passed the UDP emission filters.
+Array of detected objects for the frame.
 
-The array may be empty when no qualifying detections are present.
+Each entry contains tracking, classification, confidence, image-space box geometry, and a normalized foot point.
 
 ## Detection Object Fields
 
-Each element in `detections` represents one emitted tracked object or detection.
+Each element in `detections[i]` has the following fields.
 
 ### `id`
-Integer identifier for the detection in the UDP stream.
+Persistent object ID, also referred to as the track ID.
 
-When tracking is enabled, this is the persistent track ID. When tracking is unavailable, the formatter falls back to a per-packet index.
+When tracking is stable, the same physical object should keep the same `id` across frames.
 
 ### `cls`
-Integer Unity-facing class ID.
+Integer class ID for the object.
 
-This is derived from the internal class name through the configured class map.
+This is intended for the consumer-side class mapping. For example, `0` may represent `person` depending on the configured mapping.
 
 ### `conf`
-Floating-point confidence score in the range `[0, 1]`.
-
-This is the confidence value selected for UDP output after any class filtering or continuity handling.
+Detection confidence score in the range `[0, 1]`.
 
 ### `cx`, `cy`
 Normalized bounding-box center in image coordinates:
@@ -73,29 +67,11 @@ Normalized bounding-box center in image coordinates:
 - `cx = center_x / width`
 - `cy = center_y / height`
 
-Interpretation:
-
-- `0.0` is the left or top edge
-- `1.0` is the right or bottom edge
-
 ### `w`, `h`
 Normalized bounding-box size:
 
 - `w = box_width / width`
 - `h = box_height / height`
-
-These values are typically in the range `[0, 1]`.
-
-### Example interpretation
-
-If:
-
-- `cx = 0.46`
-- `cy = 0.63`
-- `w = 0.60`
-- `h = 0.74`
-
-then the object center is about `46%` across the image and `63%` down the image, while the bounding box covers about `60%` of the image width and `74%` of the image height.
 
 ### `foot_x`, `foot_y`
 Normalized bottom-center point of the bounding box, also called the foot point.
@@ -110,10 +86,10 @@ where:
 - `foot_x_px = (x1 + x2) / 2`
 - `foot_y_px = y2`
 
-If `foot_x` and `foot_y` are unavailable on an input detection, the UDP formatter derives them from the bounding box.
+If `foot_x` and `foot_y` are unavailable, a consumer can derive the bottom-center point from `cx`, `cy`, `w`, and `h`.
 
 ## Notes for Consumers
 
 - Bounding-box geometry fields are normalized and must be interpreted using the packet `width` and `height`.
-- The packet contains image-space detection data only. Pose fields and world-coordinate fields are intentionally omitted from this branch.
+- The packet does not include pose or world-coordinate data.
 - Object identity across frames depends on tracker stability, so `id` should be treated as a persistent track identifier rather than a per-frame index.

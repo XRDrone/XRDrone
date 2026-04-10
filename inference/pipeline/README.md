@@ -15,27 +15,20 @@ The application entrypoints and orchestration are still Python:
 - `main.py`
 - `live_runner.py`
 - `test_runner.py`
-- `pose_estimator.py`
 - rendering, capture, and UDP orchestration
 
-Several hot-path helper modules keep their original Python filenames but are backed by the native `xrdrone_native` extension after build:
+The active native-backed helper modules used by the detection branch are:
 
 - `id_flicker_mitigation.py`
 - `output_formatter.py`
-- `world_projection.py`
-- `adaptive_tuning.py`
-- `motion_smoothing.py`
 
-The Rust implementation is now split into focused source files under `src/` instead of keeping everything in one monolithic `lib.rs`:
+The Rust implementation is organized across focused source files under `src/`:
 
 - `src/lib.rs`: Python module registration only
 - `src/common.rs`: shared Python interop helpers, clamps, parsing, and history utilities
-- `src/geometry.rs`: matrix, quaternion, projection, and filter math helpers
+- `src/geometry.rs`: geometry and normalization helpers
 - `src/id_flicker.rs`: tracked-object continuity and coasting
-- `src/world_projection.rs`: foot-point extraction and world-ground projection
 - `src/udp.rs`: Unity UDP packet formatting
-- `src/adaptive_tuning.rs`: bounded runtime tuning controller
-- `src/smoothing.rs`: One Euro filters plus pose and world-track smoothing
 
 Before running `main.py` or `test_with_coverage.py`, build the native module in your active virtual environment:
 
@@ -48,19 +41,19 @@ If any file in `src/` or `Cargo.toml` changes, rebuild the extension.
 
 ## Documentation Files
 
-- `docs/setup.md`  
+- `docs/setup.md`
   Environment setup, Python dependencies, Rust toolchain notes, native build, CUDA usage, and basic verification.
 
-- `docs/settings.md`  
-  Explanation of the configurable values in `settings.py`, including input selection, UDP output, pose options, smoothing, adaptive tuning, overlays, and keybinds.
+- `docs/settings.md`
+  Explanation of the configurable values in `settings.py`, including input selection, UDP output, ID continuity tuning, overlays, and keybinds.
 
-- `docs/udp-json.md`  
-  The UDP JSON contract for the human-detection branch, including top-level packet fields, detection fields, and field meanings.
+- `docs/udp-json.md`
+  The UDP JSON contract for the human-detection branch.
 
-- `docs/runtime-ui-and-terminal-reference.md`  
-  Reference for runtime text shown on the video output and messages printed to the terminal during normal pipeline execution. This includes items such as pose-mode text, hold states, adaptive tuning log lines, toggle messages, and other runtime status output.
+- `docs/runtime-ui-and-terminal-reference.md`
+  Reference for runtime text shown on the video output and messages printed to the terminal during normal pipeline execution.
 
-- `docs/testing.md`  
+- `docs/testing.md`
   How to validate the UDP contract and transport behavior, including native-build prerequisites, available test modes, expected pass/fail output, and packet/statistics checks.
 
 ## Suggested Reading Order
@@ -76,4 +69,3 @@ If any file in `src/` or `Cargo.toml` changes, rebuild the extension.
 - Use the files in `docs/` as the main source of truth for pipeline documentation.
 - Keep detailed operational and protocol documentation there instead of expanding this top-level README.
 - Add new documentation files to `docs/` so related information remains grouped together.
-- The Rust UDP formatter preserves the documented human-detection packet contract after build. Rebuild the native module any time `src/udp.rs` changes.

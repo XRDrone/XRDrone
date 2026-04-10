@@ -19,6 +19,18 @@ from runtime_builders import build_models
 from streaming import UDPPublisher
 
 
+def _attach_detection_footpoints(merged: list[dict], *, width: int, height: int) -> None:
+    width_f = float(max(1, width))
+    height_f = float(max(1, height))
+    for det in merged:
+        bbox = det.get("bbox_xyxy")
+        if not bbox or len(bbox) != 4:
+            continue
+        x1, _y1, x2, y2 = (float(v) for v in bbox)
+        det["foot_x"] = max(0.0, min(1.0, ((x1 + x2) * 0.5) / width_f))
+        det["foot_y"] = max(0.0, min(1.0, y2 / height_f))
+
+
 def run_test(args) -> int:
     people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = build_models()
 
@@ -30,12 +42,10 @@ def run_test(args) -> int:
     now = time.time()
     frame_id = 1
 
-    infer_frame = frame
-
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
 
     people_results = people_seg_model.predict(
-        infer_frame,
+        frame,
         conf=S.PEOPLE_CONF,
         classes=detect_class_ids,
         **pred_kw,
@@ -43,7 +53,7 @@ def run_test(args) -> int:
 
     fire_results = []
     if S.FIRE_ON_DEFAULT:
-        fire_results = fire_model.predict(infer_frame, conf=S.FIRE_CONF, **pred_kw)
+        fire_results = fire_model.predict(frame, conf=S.FIRE_CONF, **pred_kw)
 
     merged = merge_detections(
         people_results,
@@ -57,6 +67,8 @@ def run_test(args) -> int:
             det["class"] = "person"
 
     height, width = frame.shape[:2]
+    _attach_detection_footpoints(merged, width=width, height=height)
+
     packet = to_unity_udp_packet(
         merged,
         frame_id=frame_id,

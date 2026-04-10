@@ -1,7 +1,7 @@
 """
 rendering.py
 
-Local visualization helpers for masks, track overlays, and pose-mode text.
+Local visualization helpers for masks and track overlays.
 """
 
 from __future__ import annotations
@@ -10,53 +10,6 @@ from collections.abc import Sequence
 
 import cv2
 import numpy as np
-
-
-def draw_pose_mode_status(
-    frame: np.ndarray,
-    text: str,
-    *,
-    enabled: bool = True,
-    origin: tuple = (20, 40),
-    text_scale: float = 0.9,
-    text_thickness: int = 2,
-):
-    """Draw the current ArUco visibility/mode label on the video frame."""
-    if not enabled or frame is None or not text:
-        return frame
-
-    h_img, w_img = frame.shape[:2]
-    x, y = int(origin[0]), int(origin[1])
-    x = max(0, min(w_img - 1, x))
-    y = max(20, min(h_img - 1, y))
-
-    (tw, th), baseline = cv2.getTextSize(
-        text,
-        cv2.FONT_HERSHEY_SIMPLEX,
-        float(text_scale),
-        int(text_thickness),
-    )
-    pad = 8
-    bx1 = max(0, x - pad)
-    by1 = max(0, y - th - pad)
-    bx2 = min(w_img - 1, x + tw + pad)
-    by2 = min(h_img - 1, y + baseline + pad)
-
-    roi = frame[by1 : by2 + 1, bx1 : bx2 + 1]
-    if roi.size > 0:
-        black = np.zeros_like(roi)
-        cv2.addWeighted(black, 0.45, roi, 0.55, 0.0, dst=roi)
-    cv2.putText(
-        frame,
-        text,
-        (x, y),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        float(text_scale),
-        (255, 255, 255),
-        int(text_thickness),
-        cv2.LINE_AA,
-    )
-    return frame
 
 
 def draw_masks(
@@ -180,13 +133,12 @@ def draw_tracked_boxes(
             try:
                 label = f"{cls_name} #{int(track_id)} {conf * 100:.1f}%"
             except Exception:
-                label = f"{cls_name} {conf * 100:.1f}%"
+                label = f"{cls_name} #{track_id} {conf * 100:.1f}%"
 
         if continuity_state == "coasted":
             label += " [hold]"
 
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, int(box_thickness))
-
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness=int(box_thickness))
         (tw, th), _ = cv2.getTextSize(
             label,
             cv2.FONT_HERSHEY_SIMPLEX,
@@ -204,7 +156,7 @@ def draw_tracked_boxes(
             (tx + 3, by2 - 3),
             cv2.FONT_HERSHEY_SIMPLEX,
             float(text_scale),
-            (0, 0, 0),
+            (255, 255, 255),
             int(text_thickness),
             cv2.LINE_AA,
         )

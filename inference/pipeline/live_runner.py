@@ -17,7 +17,7 @@ from merger import merge_detections
 from output_formatter import to_unity_udp_packet
 from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
 from rendering import draw_masks, draw_tracked_boxes
-from runtime_builders import build_models, make_adaptive_runtime_tuner, make_id_flicker_mitigator
+from runtime_builders import build_models, make_id_flicker_mitigator
 from runtime_controls import LiveRuntimeState, handle_runtime_key
 from streaming import UDPPublisher
 
@@ -52,6 +52,18 @@ def _normalize_merged_detections(
                     det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_PEOPLE", 0))
             except Exception:
                 pass
+
+
+def _attach_detection_footpoints(merged: list[dict], *, width: int, height: int) -> None:
+    width_f = float(max(1, width))
+    height_f = float(max(1, height))
+    for det in merged:
+        bbox = det.get("bbox_xyxy")
+        if not bbox or len(bbox) != 4:
+            continue
+        x1, _y1, x2, y2 = (float(v) for v in bbox)
+        det["foot_x"] = max(0.0, min(1.0, ((x1 + x2) * 0.5) / width_f))
+        det["foot_y"] = max(0.0, min(1.0, y2 / height_f))
 
 
 def _run_model_inference(
@@ -162,7 +174,6 @@ def run_live(args) -> int:
 
     people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = build_models()
     id_flicker_mitigator = make_id_flicker_mitigator()
-    adaptive_tuner = make_adaptive_runtime_tuner()
 
     state = LiveRuntimeState(
         people_on=bool(S.PEOPLE_ON_DEFAULT),
@@ -171,10 +182,8 @@ def run_live(args) -> int:
         draw_detections=bool(S.DRAW_DETECTIONS_DEFAULT),
         tracking_enabled=TRACKING_ENABLED,
         draw_track_ids=bool(getattr(S, "DRAW_TRACK_IDS", True)),
-        pose_mode_overlay_on=bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True)),
         dji_overlay_on=bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT),
         active_camera_source=S.CAMERA_SOURCE_DEFAULT,
-        motion_smoothing_value=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
     )
 
     dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
@@ -214,7 +223,6 @@ def run_live(args) -> int:
                 now = time.time()
 
             frame = format_frame(frame)
-
             infer_frame = frame
 
             wall_now = time.time()
@@ -252,6 +260,9 @@ def run_live(args) -> int:
                 use_ultra_track=use_ultra_track,
                 fire_class_names=fire_class_names,
             )
+
+            height, width = frame.shape[:2]
+            _attach_detection_footpoints(merged, width=width, height=height)
 
             if state.tracking_enabled:
                 udp_ready_detections = id_flicker_mitigator.apply(merged)
@@ -303,10 +314,7 @@ def run_live(args) -> int:
             control_result = handle_runtime_key(
                 key=key,
                 state=state,
-                pose_smoother=None,
-                world_smoother=None,
                 id_flicker_mitigator=id_flicker_mitigator,
-                adaptive_tuner=adaptive_tuner,
                 cap=cap,
                 is_file_source=is_file_source,
                 target_fps=target_fps,

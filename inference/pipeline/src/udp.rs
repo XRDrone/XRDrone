@@ -1,5 +1,5 @@
 use crate::common::{
-    any_to_class_map, any_to_string_set, dict_string_lower_chain, parse_bbox, py_get, safe_bool_opt,
+    any_to_class_map, any_to_string_set, dict_string_lower_chain, parse_bbox, py_get,
     safe_float_opt,
 };
 use crate::geometry::xyxy_to_xywhn;
@@ -39,7 +39,9 @@ pub fn to_unity_udp_packet(
             py_get(det, "udp_confidence").or_else(|| py_get(det, "confidence")),
             0.0,
         );
-        let force_emit = safe_bool_opt(py_get(det, "force_udp_emit"), false);
+        let force_emit = py_get(det, "force_udp_emit")
+            .and_then(|v| v.extract::<bool>().ok())
+            .unwrap_or(false);
         if let Some(min_conf_f) = min_conf_f {
             if conf < min_conf_f && !force_emit {
                 continue;
