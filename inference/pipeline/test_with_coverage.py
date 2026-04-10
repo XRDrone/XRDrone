@@ -5,7 +5,7 @@ UDP contract tests for the XRDrone pipeline.
 
 What this checks:
   1) Formatter/schema test:
-     Builds a sample packet and validates that it matches the README UDP contract.
+     Builds a sample packet and validates that it matches docs/udp-json.md.
 
   2) UDP loopback transport test:
      Sends a real UDP packet through UDPPublisher, receives it on localhost,
@@ -13,7 +13,7 @@ What this checks:
 
   3) Optional live packet test:
      Listens on a UDP port for packets from a running pipeline (main.py) and
-     validates that live runtime packets match the same README contract.
+     validates that live runtime packets match the same UDP contract.
 
   4) Optional stats mode:
      Collects simple packet/runtime stats from a running pipeline or from a
@@ -64,7 +64,6 @@ EXPECTED_TOP_LEVEL_KEYS = {
     "width",
     "height",
     "detections",
-    "pose",
 }
 
 EXPECTED_DETECTION_KEYS = {
@@ -77,22 +76,6 @@ EXPECTED_DETECTION_KEYS = {
     "h",
     "foot_x",
     "foot_y",
-    "world_valid",
-    "world_x",
-    "world_y",
-    "world_z",
-}
-
-EXPECTED_POSE_KEYS = {
-    "x",
-    "altitude",
-    "z",
-    "yaw",
-    "pitch",
-    "roll",
-    "hfov",
-    "markers_used",
-    "pose_valid",
 }
 
 
@@ -131,7 +114,6 @@ def _validate_top_level(pkt: dict[str, Any]) -> None:
     _assert_type(pkt["width"], int, "width")
     _assert_type(pkt["height"], int, "height")
     _assert_type(pkt["detections"], list, "detections")
-    _assert_type(pkt["pose"], dict, "pose")
 
     if pkt["width"] <= 0 or pkt["height"] <= 0:
         raise AssertionError("width and height must be positive")
@@ -144,28 +126,11 @@ def _validate_detection(det: dict[str, Any], index: int) -> None:
     _assert_type(det["id"], int, f"{prefix}.id")
     _assert_type(det["cls"], int, f"{prefix}.cls")
     _assert_type(det["conf"], (int, float), f"{prefix}.conf")
-    _assert_type(det["world_valid"], bool, f"{prefix}.world_valid")
 
     _assert_number_range(det["conf"], 0.0, 1.0, f"{prefix}.conf")
 
     for key in ("cx", "cy", "w", "h", "foot_x", "foot_y"):
         _assert_number_range(det[key], 0.0, 1.0, f"{prefix}.{key}")
-
-    for key in ("world_x", "world_y", "world_z"):
-        _assert_type(det[key], (int, float), f"{prefix}.{key}")
-
-
-def _validate_pose(pose: dict[str, Any]) -> None:
-    _assert_exact_keys(pose, EXPECTED_POSE_KEYS, "pose")
-
-    for key in ("x", "altitude", "z", "yaw", "pitch", "roll", "hfov"):
-        _assert_type(pose[key], (int, float), f"pose.{key}")
-
-    _assert_type(pose["markers_used"], int, "pose.markers_used")
-    _assert_type(pose["pose_valid"], bool, "pose.pose_valid")
-
-    if pose["markers_used"] < 0:
-        raise AssertionError("pose.markers_used must be non-negative")
 
 
 def _validate_packet(pkt: dict[str, Any]) -> None:
@@ -175,8 +140,6 @@ def _validate_packet(pkt: dict[str, Any]) -> None:
         if not isinstance(det, dict):
             raise AssertionError(f"detections[{i}] must be an object")
         _validate_detection(det, i)
-
-    _validate_pose(pkt["pose"])
 
 
 def _build_sample_packet() -> dict[str, Any]:
@@ -191,10 +154,6 @@ def _build_sample_packet() -> dict[str, Any]:
             "track_id": 7,
             "foot_x": 200.0 / width,
             "foot_y": 800.0 / height,
-            "world_valid": False,
-            "world_x": 0.0,
-            "world_y": 0.0,
-            "world_z": 0.0,
         }
     ]
 
@@ -208,18 +167,6 @@ def _build_sample_packet() -> dict[str, Any]:
         allowed_classes=S.UDP_SEND_CLASSES,
         min_conf=S.UDP_MIN_CONF,
     )
-
-    pkt["pose"] = {
-        "x": 0.0,
-        "altitude": 0.0,
-        "z": 0.0,
-        "yaw": 0.0,
-        "pitch": 0.0,
-        "roll": 0.0,
-        "hfov": float(S.POSE_HFOV_DEG),
-        "markers_used": 0,
-        "pose_valid": False,
-    }
 
     return pkt
 

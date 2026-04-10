@@ -58,10 +58,14 @@ def update_motion_smoothing_value(
 
 
 def _reset_runtime_filters(pose_smoother, world_smoother, id_flicker_mitigator, adaptive_tuner):
-    pose_smoother.reset()
-    world_smoother.reset()
-    id_flicker_mitigator.reset()
-    adaptive_tuner.reset()
+    if pose_smoother is not None:
+        pose_smoother.reset()
+    if world_smoother is not None:
+        world_smoother.reset()
+    if id_flicker_mitigator is not None:
+        id_flicker_mitigator.reset()
+    if adaptive_tuner is not None:
+        adaptive_tuner.reset()
 
 
 def handle_runtime_key(
@@ -166,11 +170,21 @@ def handle_runtime_key(
             )
 
     elif key in getattr(S, "KEY_TOGGLE_MOTION_SMOOTHING", (ord("g"), ord("G"))):
-        new_enabled = not bool(pose_smoother.enabled)
-        pose_smoother.set_enabled(new_enabled)
-        world_smoother.set_enabled(new_enabled)
-        status = "ENABLED" if new_enabled else "DISABLED"
-        print(f"Motion smoothing {status} | value={state.motion_smoothing_value:.2f}")
+        if pose_smoother is None and world_smoother is None:
+            print("Motion smoothing unavailable in the current runtime mode")
+        else:
+            current_enabled = True
+            if pose_smoother is not None:
+                current_enabled = bool(pose_smoother.enabled)
+            elif world_smoother is not None:
+                current_enabled = bool(world_smoother.enabled)
+            new_enabled = not current_enabled
+            if pose_smoother is not None:
+                pose_smoother.set_enabled(new_enabled)
+            if world_smoother is not None:
+                world_smoother.set_enabled(new_enabled)
+            status = "ENABLED" if new_enabled else "DISABLED"
+            print(f"Motion smoothing {status} | value={state.motion_smoothing_value:.2f}")
 
     elif key in getattr(S, "KEY_DECREASE_MOTION_SMOOTHING", (ord("["), ord("{"))):
         state.motion_smoothing_value = update_motion_smoothing_value(

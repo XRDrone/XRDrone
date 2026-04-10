@@ -322,7 +322,6 @@ The test script validates the UDP packet with exact key matching.
 - `width`
 - `height`
 - `detections`
-- `pose`
 
 ### Required detection keys
 
@@ -337,39 +336,18 @@ Each detection object must contain exactly:
 - `h`
 - `foot_x`
 - `foot_y`
-- `world_valid`
-- `world_x`
-- `world_y`
-- `world_z`
-
-### Required pose keys
-
-The pose object must contain exactly:
-
-- `x`
-- `altitude`
-- `z`
-- `yaw`
-- `pitch`
-- `roll`
-- `hfov`
-- `markers_used`
-- `pose_valid`
 
 ### Additional validation rules
 
 The script also checks that:
 
-- `frame_id`, `width`, `height`, and `markers_used` are integers
-- `timestamp` and numeric pose fields are numeric
+- `frame_id`, `width`, and `height` are integers
+- `timestamp` is numeric
 - `detections` is a list
-- `pose` is an object
-- `world_valid` and `pose_valid` are booleans
 - `conf` is in the range `[0.0, 1.0]`
 - `cx`, `cy`, `w`, `h`, `foot_x`, and `foot_y` are all in `[0.0, 1.0]`
 - `width` and `height` are positive
-- `markers_used` is non-negative
-- no extra keys are present in the packet, detection objects, or pose object
+- no extra keys are present in the packet or detection objects
 
 The test fails if any required field is missing, any unexpected field is present, or any field has an invalid type or range.
 
