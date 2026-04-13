@@ -1,4 +1,4 @@
-# XRDrone UDP Pipeline Documentation
+# XRDrone Detector + ORB-SLAM Fusion Pipeline
 
 This repository keeps the pipeline documentation split into focused Markdown files inside `docs/`. Use those files as the main reference for setup, runtime behavior, packet structure, settings, and runtime output.
 
@@ -15,20 +15,28 @@ The application entrypoints and orchestration are still Python:
 - `main.py`
 - `live_runner.py`
 - `test_runner.py`
-- rendering, capture, and UDP orchestration
+- `pose_estimator.py`
+- rendering, capture, detector-to-SLAM fusion, and UDP orchestration
 
-The active native-backed helper modules used by the detection branch are:
+Several hot-path helper modules keep their original Python filenames but are backed by the native `xrdrone_native` extension after build:
 
 - `id_flicker_mitigation.py`
 - `output_formatter.py`
+- `world_projection.py`
+- `adaptive_tuning.py`
+- `motion_smoothing.py`
 
-The Rust implementation is organized across focused source files under `src/`:
+The Rust implementation is now split into focused source files under `src/` instead of keeping everything in one monolithic `lib.rs`:
 
 - `src/lib.rs`: Python module registration only
 - `src/common.rs`: shared Python interop helpers, clamps, parsing, and history utilities
-- `src/geometry.rs`: geometry and normalization helpers
+- `src/geometry.rs`: matrix, quaternion, projection, and filter math helpers
 - `src/id_flicker.rs`: tracked-object continuity and coasting
+- `src/world_projection.rs`: foot-point extraction and world-ground projection
 - `src/udp.rs`: Unity UDP packet formatting
+- `orbslam_fusion.py`: ORB-SLAM pose-file parsing, frame/time alignment, and 3D projection
+- `src/adaptive_tuning.rs`: bounded runtime tuning controller
+- `src/smoothing.rs`: One Euro filters plus pose and world-track smoothing
 
 Before running `main.py` or `test_with_coverage.py`, build the native module in your active virtual environment:
 
@@ -41,19 +49,19 @@ If any file in `src/` or `Cargo.toml` changes, rebuild the extension.
 
 ## Documentation Files
 
-- `docs/setup.md`
+- `docs/setup.md`  
   Environment setup, Python dependencies, Rust toolchain notes, native build, CUDA usage, and basic verification.
 
-- `docs/settings.md`
-  Explanation of the configurable values in `settings.py`, including input selection, UDP output, ID continuity tuning, overlays, and keybinds.
+- `docs/settings.md`  
+  Explanation of the configurable values in `settings.py`, including input selection, UDP output, pose options, smoothing, adaptive tuning, overlays, and keybinds.
 
-- `docs/udp-json.md`
-  The UDP JSON contract for the human-detection branch.
+- `docs/udp-json.md`  
+  The UDP JSON contract, including top-level packet fields, detection fields, pose fields, and field meanings.
 
-- `docs/runtime-ui-and-terminal-reference.md`
-  Reference for runtime text shown on the video output and messages printed to the terminal during normal pipeline execution.
+- `docs/runtime-ui-and-terminal-reference.md`  
+  Reference for runtime text shown on the video output and messages printed to the terminal during normal pipeline execution. This includes items such as pose-mode text, hold states, adaptive tuning log lines, toggle messages, and other runtime status output.
 
-- `docs/testing.md`
+- `docs/testing.md`  
   How to validate the UDP contract and transport behavior, including native-build prerequisites, available test modes, expected pass/fail output, and packet/statistics checks.
 
 ## Suggested Reading Order
@@ -69,3 +77,11 @@ If any file in `src/` or `Cargo.toml` changes, rebuild the extension.
 - Use the files in `docs/` as the main source of truth for pipeline documentation.
 - Keep detailed operational and protocol documentation there instead of expanding this top-level README.
 - Add new documentation files to `docs/` so related information remains grouped together.
+- The UDP schema is unchanged by the Rust port. The native module accelerates selected helper stages while preserving the existing Python-facing module names and packet contract.
+
+
+## ORB-SLAM Middle-Man Flow
+
+The backend now treats human detection and ORB-SLAM as separate branches that are fused in the Python middle-man before the packet is sent to Unity. The detector branch still produces image-space boxes and IDs. The ORB-SLAM branch now sends camera poses over UDP as JSON packets with `frame_id`, `timestamp`, `pose_valid`, `tracking_state`, `x`, `y`, `z`, `qx`, `qy`, `qz`, and `qw`. The fusion layer listens on a dedicated UDP port, matches by `frame_id` first, falls back to timestamp within a configurable tolerance, projects foot points onto the configured ground plane, and then publishes one combined UDP packet containing detections, projected world coordinates, a compatibility `pose` object, a raw `slam` object, and a `fusion_status` object.
+
+When MediaMTX is used, the recommended layout is to let both branches consume the same stream source and let the middle-man remain the only stage that builds Unity-facing packets.

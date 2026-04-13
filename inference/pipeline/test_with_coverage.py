@@ -2,17 +2,66 @@
 test_with_coverage.py
 
 UDP contract tests for the XRDrone pipeline.
+
+What this checks:
+  1) Formatter/schema test:
+     Builds a sample packet and validates that it matches the README UDP contract.
+
+  2) UDP loopback transport test:
+     Sends a real UDP packet through UDPPublisher, receives it on localhost,
+     parses it back from JSON, and validates the received packet.
+
+  3) Optional live packet test:
+     Listens on a UDP port for packets from a running pipeline (main.py) and
+     validates that live runtime packets match the same README contract.
+
+  4) Optional stats mode:
+     Collects simple packet/runtime stats from a running pipeline or from a
+     video file by launching the pipeline automatically.
+
+Success behavior:
+  - Prints exactly one PASS line on success
+  - Prints exactly one FAIL line on failure
+  - Exits with code 0 on success, 1 on failure
+
+Usage:
+  python test_with_coverage.py
+      Runs formatter/schema + real UDP loopback send/receive.
+
+  python test_with_coverage.py --live
+      Runs formatter/schema + loopback + live listener validation.
+      Start main.py in another terminal before running this mode.
+
+  python test_with_coverage.py --live --packets 5 --timeout 8
+      Wait for 5 valid live packets for up to 8 seconds.
+
+  python test_with_coverage.py --stats --packets 120 --timeout 8
+      Collect stats from a running pipeline.
+
+  python test_with_coverage.py --video "/path/to/video.mp4" --stats
+      Launch the pipeline on the given video and print stats after it finishes.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import socket
+import threading
 import time
+from types import SimpleNamespace
 from typing import Any
 
+import cv2
 import settings as S
+from orbslam_fusion import (
+    attach_foot_and_world_from_orbslam,
+    build_fusion_status,
+    build_pose_packet,
+    build_slam_packet,
+    parse_orbslam_udp_packet,
+)
 from output_formatter import to_unity_udp_packet
 from streaming import UDPPublisher
 
@@ -22,6 +71,9 @@ EXPECTED_TOP_LEVEL_KEYS = {
     "width",
     "height",
     "detections",
+    "pose",
+    "slam",
+    "fusion_status",
 }
 
 EXPECTED_DETECTION_KEYS = {
@@ -34,6 +86,48 @@ EXPECTED_DETECTION_KEYS = {
     "h",
     "foot_x",
     "foot_y",
+    "world_valid",
+    "world_x",
+    "world_y",
+    "world_z",
+}
+
+EXPECTED_POSE_KEYS = {
+    "x",
+    "altitude",
+    "z",
+    "yaw",
+    "pitch",
+    "roll",
+    "hfov",
+    "markers_used",
+    "pose_valid",
+}
+
+EXPECTED_SLAM_KEYS = {
+    "tracking_state",
+    "match_mode",
+    "pose_valid",
+    "frame_id",
+    "timestamp",
+    "x",
+    "y",
+    "z",
+    "qx",
+    "qy",
+    "qz",
+    "qw",
+}
+
+EXPECTED_FUSION_STATUS_KEYS = {
+    "source",
+    "slam_tracking",
+    "match_mode",
+    "projection_state",
+    "pose_valid",
+    "projection_attempted",
+    "projection_projected",
+    "reason",
 }
 
 
@@ -72,6 +166,9 @@ def _validate_top_level(pkt: dict[str, Any]) -> None:
     _assert_type(pkt["width"], int, "width")
     _assert_type(pkt["height"], int, "height")
     _assert_type(pkt["detections"], list, "detections")
+    _assert_type(pkt["pose"], dict, "pose")
+    _assert_type(pkt["slam"], dict, "slam")
+    _assert_type(pkt["fusion_status"], dict, "fusion_status")
 
     if pkt["width"] <= 0 or pkt["height"] <= 0:
         raise AssertionError("width and height must be positive")
@@ -84,11 +181,51 @@ def _validate_detection(det: dict[str, Any], index: int) -> None:
     _assert_type(det["id"], int, f"{prefix}.id")
     _assert_type(det["cls"], int, f"{prefix}.cls")
     _assert_type(det["conf"], (int, float), f"{prefix}.conf")
+    _assert_type(det["world_valid"], bool, f"{prefix}.world_valid")
 
     _assert_number_range(det["conf"], 0.0, 1.0, f"{prefix}.conf")
 
     for key in ("cx", "cy", "w", "h", "foot_x", "foot_y"):
         _assert_number_range(det[key], 0.0, 1.0, f"{prefix}.{key}")
+
+    for key in ("world_x", "world_y", "world_z"):
+        _assert_type(det[key], (int, float), f"{prefix}.{key}")
+
+
+def _validate_pose(pose: dict[str, Any]) -> None:
+    _assert_exact_keys(pose, EXPECTED_POSE_KEYS, "pose")
+
+    for key in ("x", "altitude", "z", "yaw", "pitch", "roll", "hfov"):
+        _assert_type(pose[key], (int, float), f"pose.{key}")
+
+    _assert_type(pose["markers_used"], int, "pose.markers_used")
+    _assert_type(pose["pose_valid"], bool, "pose.pose_valid")
+
+    if pose["markers_used"] < 0:
+        raise AssertionError("pose.markers_used must be non-negative")
+
+
+def _validate_slam(slam: dict[str, Any]) -> None:
+    _assert_exact_keys(slam, EXPECTED_SLAM_KEYS, "slam")
+    _assert_type(slam["tracking_state"], str, "slam.tracking_state")
+    _assert_type(slam["match_mode"], str, "slam.match_mode")
+    _assert_type(slam["pose_valid"], bool, "slam.pose_valid")
+    _assert_type(slam["frame_id"], (int, type(None)), "slam.frame_id")
+    _assert_type(slam["timestamp"], (int, float, type(None)), "slam.timestamp")
+    for key in ("x", "y", "z", "qx", "qy", "qz", "qw"):
+        _assert_type(slam[key], (int, float), f"slam.{key}")
+
+
+def _validate_fusion_status(status: dict[str, Any]) -> None:
+    _assert_exact_keys(status, EXPECTED_FUSION_STATUS_KEYS, "fusion_status")
+    _assert_type(status["source"], str, "fusion_status.source")
+    _assert_type(status["slam_tracking"], str, "fusion_status.slam_tracking")
+    _assert_type(status["match_mode"], str, "fusion_status.match_mode")
+    _assert_type(status["projection_state"], str, "fusion_status.projection_state")
+    _assert_type(status["pose_valid"], bool, "fusion_status.pose_valid")
+    _assert_type(status["projection_attempted"], int, "fusion_status.projection_attempted")
+    _assert_type(status["projection_projected"], int, "fusion_status.projection_projected")
+    _assert_type(status["reason"], str, "fusion_status.reason")
 
 
 def _validate_packet(pkt: dict[str, Any]) -> None:
@@ -98,6 +235,10 @@ def _validate_packet(pkt: dict[str, Any]) -> None:
         if not isinstance(det, dict):
             raise AssertionError(f"detections[{i}] must be an object")
         _validate_detection(det, i)
+
+    _validate_pose(pkt["pose"])
+    _validate_slam(pkt["slam"])
+    _validate_fusion_status(pkt["fusion_status"])
 
 
 def _build_sample_packet() -> dict[str, Any]:
@@ -112,10 +253,43 @@ def _build_sample_packet() -> dict[str, Any]:
             "track_id": 7,
             "foot_x": 200.0 / width,
             "foot_y": 800.0 / height,
+            "world_valid": False,
+            "world_x": 0.0,
+            "world_y": 0.0,
+            "world_z": 0.0,
         }
     ]
 
-    return to_unity_udp_packet(
+    slam_packet = {
+        "source": "orbslam",
+        "frame_id": 1,
+        "timestamp": 1234567890.123,
+        "pose_valid": True,
+        "tracking_state": "ok",
+        "x": 1.0,
+        "y": 2.0,
+        "z": 3.0,
+        "qx": 0.0,
+        "qy": 0.0,
+        "qz": 0.0,
+        "qw": 1.0,
+    }
+    slam_pose = parse_orbslam_udp_packet(slam_packet)
+    if slam_pose is None:
+        raise AssertionError("failed to parse sample ORB-SLAM UDP packet")
+
+    projection_counts = attach_foot_and_world_from_orbslam(
+        merged_detections,
+        pose=slam_pose,
+        width=width,
+        height=height,
+        hfov_deg=float(S.POSE_HFOV_DEG),
+        projection_classes=tuple(S.UDP_SEND_CLASSES),
+        projection_min_conf=float(S.UDP_MIN_CONF),
+        ground_plane_y=float(getattr(S, "ORBSLAM_GROUND_PLANE_Y", 0.0)),
+    )
+
+    pkt = to_unity_udp_packet(
         merged_detections,
         frame_id=1,
         timestamp=1234567890.123,
@@ -125,6 +299,19 @@ def _build_sample_packet() -> dict[str, Any]:
         allowed_classes=S.UDP_SEND_CLASSES,
         min_conf=S.UDP_MIN_CONF,
     )
+
+    pkt["pose"] = build_pose_packet(slam_pose, hfov_deg=float(S.POSE_HFOV_DEG))
+    pkt["slam"] = build_slam_packet(slam_pose, tracking_state="ok", match_mode="frame_id")
+    pkt["fusion_status"] = build_fusion_status(
+        source="orbslam",
+        pose=slam_pose,
+        match_mode="frame_id",
+        reader_error=None,
+        projection_attempted=projection_counts["attempted"],
+        projection_projected=projection_counts["projected"],
+    )
+
+    return pkt
 
 
 def _recv_json_packet(sock: socket.socket, timeout_s: float) -> dict[str, Any]:
@@ -161,126 +348,531 @@ def _test_formatter_schema() -> None:
     _validate_packet(pkt)
 
 
-def _test_udp_loopback() -> None:
+def _test_udp_loopback(timeout_s: float) -> None:
     recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    recv_sock.bind((S.UDP_IP, 0))
-    recv_host, recv_port = recv_sock.getsockname()
+    recv_sock.bind(("127.0.0.1", 0))
+    recv_ip, recv_port = recv_sock.getsockname()
 
-    pub = UDPPublisher(recv_host, recv_port)
+    publisher = UDPPublisher(recv_ip, recv_port)
+
     try:
-        pkt = _build_sample_packet()
-        pub.send_json(pkt)
-        got = _recv_json_packet(recv_sock, timeout_s=2.0)
-        _validate_packet(got)
+        expected_pkt = _build_sample_packet()
+        publisher.send_json(expected_pkt)
+
+        received_pkt = _recv_json_packet(recv_sock, timeout_s=timeout_s)
+        _validate_packet(received_pkt)
+
+        if received_pkt != expected_pkt:
+            raise AssertionError("received UDP packet does not match sent packet")
     finally:
-        pub.close()
-        recv_sock.close()
+        try:
+            publisher.close()
+        except Exception:
+            pass
+        try:
+            recv_sock.close()
+        except Exception:
+            pass
 
 
-def _validate_live_packet_stats(pkt: dict[str, Any]) -> tuple[int, int]:
-    _validate_packet(pkt)
-    num_dets = len(pkt["detections"])
-    packet_size = len(json.dumps(pkt, separators=(",", ":")).encode("utf-8"))
-    return num_dets, packet_size
-
-
-def _run_live_listener(
-    host: str, port: int, packets: int, timeout_s: float
-) -> list[dict[str, Any]]:
+def _iter_valid_live_packets(
+    host: str,
+    port: int,
+    packets_needed: int,
+    timeout_s: float,
+) -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((host, port))
-    sock.settimeout(0.2)
-
-    deadline = time.time() + float(timeout_s)
-    received: list[dict[str, Any]] = []
     try:
-        while len(received) < int(packets) and time.time() < deadline:
-            try:
-                pkt = _recv_json_packet(sock, timeout_s=0.2)
-            except TimeoutError:
-                continue
+        sock.bind((host, int(port)))
+        sock.settimeout(float(timeout_s))
+
+        valid_count = 0
+        last_progress_time = 0.0
+
+        while valid_count < packets_needed:
+            pkt = _recv_json_packet(sock, timeout_s=timeout_s)
             _validate_packet(pkt)
-            received.append(pkt)
+            valid_count += 1
+
+            now = time.time()
+            if now - last_progress_time >= 0.05 or valid_count == packets_needed:
+                _print_progress(
+                    current=valid_count,
+                    total=packets_needed,
+                    prefix="Live packets",
+                )
+                last_progress_time = now
+
+        _finish_progress()
+        return valid_count
     finally:
-        sock.close()
-    return received
+        try:
+            sock.close()
+        except Exception:
+            pass
 
 
-def _stats_summary(packets: list[dict[str, Any]]) -> dict[str, Any]:
-    sizes = [len(json.dumps(pkt, separators=(",", ":")).encode("utf-8")) for pkt in packets]
-    det_counts = [len(pkt["detections"]) for pkt in packets]
-    return {
-        "packets": len(packets),
-        "avg_packet_size": sum(sizes) / len(sizes) if sizes else 0.0,
-        "min_packet_size": min(sizes) if sizes else 0,
-        "max_packet_size": max(sizes) if sizes else 0,
-        "avg_detections": sum(det_counts) / len(det_counts) if det_counts else 0.0,
-    }
+def _test_live_udp_packets(
+    host: str,
+    port: int,
+    packets_needed: int,
+    timeout_s: float,
+) -> None:
+    valid_count = _iter_valid_live_packets(
+        host=host,
+        port=port,
+        packets_needed=packets_needed,
+        timeout_s=timeout_s,
+    )
+    if valid_count < packets_needed:
+        raise AssertionError(
+            f"only received {valid_count} valid live packets, expected {packets_needed}"
+        )
 
 
-def _run_pipeline_for_video(video_path: str, timeout_s: float) -> list[dict[str, Any]]:
-    import subprocess
-    import sys
+def _safe_mean(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    return float(sum(values) / len(values))
 
-    recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    recv_sock.bind((S.UDP_IP, 0))
-    host, port = recv_sock.getsockname()
-    recv_sock.close()
 
-    cmd = [
-        sys.executable,
-        "main.py",
-        "--no-gui",
-    ]
-    env = None
-    process = subprocess.Popen(cmd, env=env)
+def _safe_std(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mu = _safe_mean(values)
+    var = sum((v - mu) ** 2 for v in values) / len(values)
+    return float(math.sqrt(var))
+
+
+def _class_name_from_id(cls_id: Any) -> str:
     try:
-        return _run_live_listener(host, port, packets=30, timeout_s=timeout_s)
+        cls_i = int(cls_id)
+    except Exception:
+        return ""
+
+    for name, mapped_id in getattr(S, "UNITY_CLASS_ID", {}).items():
+        try:
+            if int(mapped_id) == cls_i:
+                return str(name).lower()
+        except Exception:
+            continue
+    return ""
+
+
+def _person_detections(pkt: dict[str, Any]) -> list[dict[str, float]]:
+    out: list[dict[str, float]] = []
+    detections = pkt.get("detections", [])
+    if not isinstance(detections, list):
+        return out
+
+    for det in detections:
+        if not isinstance(det, dict):
+            continue
+        if _class_name_from_id(det.get("cls")) != "person":
+            continue
+        try:
+            out.append(
+                {
+                    "id": float(det["id"]),
+                    "cx": float(det["cx"]),
+                    "cy": float(det["cy"]),
+                }
+            )
+        except Exception:
+            continue
+
+    return out
+
+
+def _estimate_id_switches(
+    prev_people: list[dict[str, float]],
+    cur_people: list[dict[str, float]],
+    max_dist: float = 0.08,
+) -> int:
+    if not prev_people or not cur_people:
+        return 0
+
+    used_cur: set[int] = set()
+    switches = 0
+
+    for prev in prev_people:
+        best_j = -1
+        best_dist = float("inf")
+        px = float(prev["cx"])
+        py = float(prev["cy"])
+
+        for j, cur in enumerate(cur_people):
+            if j in used_cur:
+                continue
+            dx = float(cur["cx"]) - px
+            dy = float(cur["cy"]) - py
+            dist = math.hypot(dx, dy)
+            if dist < best_dist:
+                best_dist = dist
+                best_j = j
+
+        if best_j >= 0 and best_dist <= max_dist:
+            used_cur.add(best_j)
+            if int(cur_people[best_j]["id"]) != int(prev["id"]):
+                switches += 1
+
+    return switches
+
+
+def _estimate_video_total_packets(video_path: str) -> int | None:
+    cap = cv2.VideoCapture(video_path)
+    try:
+        if not cap.isOpened():
+            return None
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if frame_count > 0:
+            return frame_count
+        return None
     finally:
-        process.terminate()
-        process.wait(timeout=5)
+        try:
+            cap.release()
+        except Exception:
+            pass
+
+
+def _print_progress(
+    current: int,
+    total: int | None = None,
+    *,
+    prefix: str = "Progress",
+    width: int = 32,
+) -> None:
+    if total is not None and total > 0:
+        current = max(0, min(current, total))
+        ratio = float(current) / float(total)
+        filled = int(round(ratio * width))
+        bar = "#" * filled + "-" * (width - filled)
+        pct = ratio * 100.0
+        print(f"\r{prefix}: [{bar}] {current}/{total} ({pct:5.1f}%)", end="", flush=True)
+    else:
+        spinner = "|/-\\"
+        ch = spinner[current % len(spinner)]
+        print(f"\r{prefix}: {ch} packets={current}", end="", flush=True)
+
+
+def _finish_progress() -> None:
+    print()
+
+
+def _collect_udp_stats(
+    host: str,
+    port: int,
+    packets_needed: int,
+    timeout_s: float,
+    stop_event: threading.Event | None = None,
+    progress_total: int | None = None,
+    progress_prefix: str = "Stats",
+) -> dict[str, Any]:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind((host, int(port)))
+        sock.settimeout(float(timeout_s))
+
+        valid_packets = 0
+        invalid_packets = 0
+        packet_sizes: list[int] = []
+        source_dt_values: list[float] = []
+        arrival_dt_values: list[float] = []
+
+        frame_gaps = 0
+        duplicate_frames = 0
+        out_of_order_frames = 0
+        person_id_switches_est = 0
+
+        prev_frame_id: int | None = None
+        prev_source_ts: float | None = None
+        prev_arrival_ts: float | None = None
+        prev_people: list[dict[str, float]] = []
+
+        last_progress_time = 0.0
+
+        while True:
+            if packets_needed > 0 and valid_packets >= packets_needed:
+                break
+            if stop_event is not None and stop_event.is_set():
+                break
+
+            try:
+                pkt, raw_bytes, arrival_ts = _recv_json_packet_with_meta(sock, timeout_s)
+                _validate_packet(pkt)
+            except TimeoutError:
+                if stop_event is not None and stop_event.is_set():
+                    break
+                continue
+            except Exception:
+                invalid_packets += 1
+                continue
+
+            valid_packets += 1
+            packet_sizes.append(len(raw_bytes))
+
+            frame_id = int(pkt["frame_id"])
+            source_ts = float(pkt["timestamp"])
+
+            if prev_frame_id is not None:
+                frame_delta = frame_id - prev_frame_id
+                if frame_delta > 1:
+                    frame_gaps += frame_delta - 1
+                elif frame_delta == 0:
+                    duplicate_frames += 1
+                else:
+                    out_of_order_frames += 1
+
+            if prev_source_ts is not None:
+                dt = source_ts - prev_source_ts
+                if dt > 0:
+                    source_dt_values.append(dt)
+
+            if prev_arrival_ts is not None:
+                dt = arrival_ts - prev_arrival_ts
+                if dt > 0:
+                    arrival_dt_values.append(dt)
+
+            cur_people = _person_detections(pkt)
+            person_id_switches_est += _estimate_id_switches(prev_people, cur_people)
+            prev_people = cur_people
+
+            prev_frame_id = frame_id
+            prev_source_ts = source_ts
+            prev_arrival_ts = arrival_ts
+
+            now = time.time()
+            if now - last_progress_time >= 0.05:
+                _print_progress(
+                    current=valid_packets,
+                    total=progress_total,
+                    prefix=progress_prefix,
+                )
+                last_progress_time = now
+
+        _print_progress(
+            current=valid_packets,
+            total=progress_total,
+            prefix=progress_prefix,
+        )
+        _finish_progress()
+
+        source_fps_est = 0.0
+        arrival_fps_est = 0.0
+
+        if source_dt_values:
+            source_fps_est = 1.0 / _safe_mean(source_dt_values)
+        if arrival_dt_values:
+            arrival_fps_est = 1.0 / _safe_mean(arrival_dt_values)
+
+        return {
+            "valid_packets": valid_packets,
+            "invalid_packets": invalid_packets,
+            "avg_packet_bytes": _safe_mean([float(v) for v in packet_sizes]),
+            "min_packet_bytes": min(packet_sizes) if packet_sizes else 0,
+            "max_packet_bytes": max(packet_sizes) if packet_sizes else 0,
+            "source_fps_est": source_fps_est,
+            "arrival_fps_est": arrival_fps_est,
+            "source_dt_jitter_s": _safe_std(source_dt_values),
+            "arrival_dt_jitter_s": _safe_std(arrival_dt_values),
+            "frame_gaps": frame_gaps,
+            "duplicate_frames": duplicate_frames,
+            "out_of_order_frames": out_of_order_frames,
+            "person_id_switches_est": person_id_switches_est,
+        }
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
+def _print_stats(stats: dict[str, Any]) -> None:
+    print(
+        "STATS: "
+        f"valid_packets={stats['valid_packets']}, "
+        f"invalid_packets={stats['invalid_packets']}, "
+        f"avg_packet_bytes={stats['avg_packet_bytes']:.1f}, "
+        f"min_packet_bytes={stats['min_packet_bytes']}, "
+        f"max_packet_bytes={stats['max_packet_bytes']}, "
+        f"source_fps_est={stats['source_fps_est']:.2f}, "
+        f"arrival_fps_est={stats['arrival_fps_est']:.2f}, "
+        f"source_dt_jitter_s={stats['source_dt_jitter_s']:.6f}, "
+        f"arrival_dt_jitter_s={stats['arrival_dt_jitter_s']:.6f}, "
+        f"frame_gaps={stats['frame_gaps']}, "
+        f"duplicate_frames={stats['duplicate_frames']}, "
+        f"out_of_order_frames={stats['out_of_order_frames']}, "
+        f"person_id_switches_est={stats['person_id_switches_est']}"
+    )
+
+
+def _run_pipeline_on_video(video_path: str) -> int:
+    import main as pipeline_main
+
+    old_input_mode = S.INPUT_MODE
+    old_video_path = S.VIDEO_PATH
+    old_enable_udp = S.ENABLE_UDP
+
+    try:
+        S.INPUT_MODE = "file"
+        S.VIDEO_PATH = video_path
+        S.ENABLE_UDP = True
+        return int(pipeline_main.run_live(SimpleNamespace(no_gui=True)))
+    finally:
+        S.INPUT_MODE = old_input_mode
+        S.VIDEO_PATH = old_video_path
+        S.ENABLE_UDP = old_enable_udp
+
+
+def _collect_video_stats(
+    video_path: str,
+    host: str,
+    port: int,
+    timeout_s: float,
+) -> dict[str, Any]:
+    stop_event = threading.Event()
+    pipeline_result: dict[str, Any] = {"code": None, "error": None}
+
+    def _pipeline_target() -> None:
+        try:
+            pipeline_result["code"] = _run_pipeline_on_video(video_path)
+        except Exception as e:
+            pipeline_result["error"] = e
+        finally:
+            stop_event.set()
+
+    expected_packets = _estimate_video_total_packets(video_path)
+
+    thread = threading.Thread(target=_pipeline_target, daemon=True)
+    thread.start()
+
+    time.sleep(0.25)
+
+    stats = _collect_udp_stats(
+        host=host,
+        port=port,
+        packets_needed=0,
+        timeout_s=timeout_s,
+        stop_event=stop_event,
+        progress_total=expected_packets,
+        progress_prefix="Video stats",
+    )
+
+    thread.join()
+
+    if pipeline_result["error"] is not None:
+        raise RuntimeError(f"video pipeline failed: {pipeline_result['error']}")
+
+    if int(stats["valid_packets"]) <= 0:
+        raise AssertionError("no valid UDP packets were received while running the video")
+
+    return stats
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Validate XRDrone UDP packet structure and UDP transport."
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Also listen for live packets from a running main.py process.",
+    )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Collect UDP stream stats.",
+    )
+    parser.add_argument(
+        "--video",
+        default="",
+        help="Run the pipeline on this video path and print stats after it finishes.",
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host/interface to bind for live UDP listening.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(S.UDP_PORT),
+        help="UDP port to bind for live UDP listening.",
+    )
+    parser.add_argument(
+        "--packets",
+        type=int,
+        default=3,
+        help="Number of valid packets required for --live or --stats. Ignored for --video.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="Socket timeout in seconds.",
+    )
+    return parser.parse_args()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the XRDrone UDP contract and transport.")
-    parser.add_argument(
-        "--live", action="store_true", help="Listen for packets from a running pipeline."
-    )
-    parser.add_argument(
-        "--stats", action="store_true", help="Print summary stats after validation."
-    )
-    parser.add_argument(
-        "--packets", type=int, default=5, help="Number of live packets to validate."
-    )
-    parser.add_argument(
-        "--timeout", type=float, default=8.0, help="Live listener timeout in seconds."
-    )
-    parser.add_argument("--video", default="", help="Optional video path used with --stats.")
-    args = parser.parse_args()
+    args = _parse_args()
 
     try:
         _test_formatter_schema()
-        _test_udp_loopback()
+        _test_udp_loopback(timeout_s=args.timeout)
 
-        live_packets: list[dict[str, Any]] = []
-        if args.live:
-            live_packets = _run_live_listener(S.UDP_IP, S.UDP_PORT, args.packets, args.timeout)
-            if len(live_packets) < args.packets:
-                raise AssertionError(
-                    f"Only received {len(live_packets)} valid live packets before timeout"
-                )
+        if args.video:
+            if not args.stats:
+                raise AssertionError("--video requires --stats")
+            stats = _collect_video_stats(
+                video_path=args.video,
+                host=args.host,
+                port=args.port,
+                timeout_s=args.timeout,
+            )
+            print(
+                "PASSED: UDP formatter structure, UDP send/receive, "
+                "and video stats collection are valid"
+            )
+            _print_stats(stats)
 
-        if args.stats:
-            packets = live_packets
-            if not packets and args.video:
-                packets = _run_pipeline_for_video(args.video, args.timeout)
-            summary = _stats_summary(packets)
-            print(json.dumps(summary, indent=2, sort_keys=True))
+        elif args.stats:
+            stats = _collect_udp_stats(
+                host=args.host,
+                port=args.port,
+                packets_needed=args.packets,
+                timeout_s=args.timeout,
+                progress_total=args.packets,
+                progress_prefix="Stats",
+            )
+            print(
+                "PASSED: UDP formatter structure, UDP send/receive, and stats collection are valid"
+            )
+            _print_stats(stats)
 
-        print("PASS")
+        elif args.live:
+            _test_live_udp_packets(
+                host=args.host,
+                port=args.port,
+                packets_needed=args.packets,
+                timeout_s=args.timeout,
+            )
+            print("PASSED: live UDP transport and README packet structure are valid")
+
+        else:
+            print("PASSED: UDP formatter structure and UDP send/receive are valid")
+
         return 0
-    except Exception as exc:
-        print(f"FAIL: {exc}")
+
+    except Exception as e:
+        if args.video:
+            print(f"FAILED: video stats collection or packet structure is invalid: {e}")
+        elif args.stats:
+            print(f"FAILED: UDP stats collection or packet structure is invalid: {e}")
+        elif args.live:
+            print(f"FAILED: live UDP transport or README packet structure is invalid: {e}")
+        else:
+            print(f"FAILED: UDP formatter structure or UDP send/receive is invalid: {e}")
         return 1
 
 

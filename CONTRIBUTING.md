@@ -134,7 +134,7 @@ Typical validation workflow:
 
 1. Build the native module (`bash build_native.sh`)
 2. Run the pipeline (`python main.py`)
-3. Verify detections and pose behavior
+3. Verify detections and runtime behavior
 4. Confirm UDP packets match schema
 5. Confirm Unity receives detections and pose data
 
@@ -224,7 +224,6 @@ Do not commit:
 
 Examples:
 
-- `Add motion smoothing for ArUco pose updates`
 - `Optimize UDP packet serialization`
 - `Implement adaptive runtime tuning`
 - `Port hot-path helper modules to Rust`
