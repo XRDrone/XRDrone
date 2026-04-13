@@ -523,3 +523,32 @@ If you are scanning a live run, the most important runtime text usually means:
 - `Motion smoothing ...` = smoothing was toggled or adjusted
 - `Recording ENABLED/DISABLED ...` = output recording changed state
 
+
+
+## ORB-SLAM fusion status block
+
+When `ORBSLAM_STATUS_OVERLAY_ENABLED` is on, the runtime draws a multi-line block in the top-left corner of the frame. This is the failure-handling overlay for the middle-man.
+
+Typical lines are:
+
+```text
+SLAM: OK
+Match: FRAME_ID
+Projection: OK (1/1)
+```
+
+or, during failure conditions:
+
+```text
+SLAM: MISSING
+Match: NONE
+Projection: UNAVAILABLE (0/1)
+no aligned ORB-SLAM pose; waiting for ORB-SLAM UDP packets
+```
+
+Interpretation:
+
+- `SLAM`: whether the middle-man found a usable aligned ORB-SLAM pose, or whether the UDP feed is missing or stale
+- `Match`: whether that alignment came from exact `frame_id`, timestamp fallback, latest-sample fallback, or none
+- `Projection`: whether eligible detections could be projected to the configured ground plane
+- final line: short failure reason surfaced directly from `fusion_status.reason`

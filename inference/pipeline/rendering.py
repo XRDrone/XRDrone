@@ -1,7 +1,7 @@
 """
 rendering.py
 
-Local visualization helpers for masks, track overlays, and pose-mode text.
+Local visualization helpers for masks, track overlays, pose-mode text, and fusion-status text.
 """
 
 from __future__ import annotations
@@ -208,5 +208,63 @@ def draw_tracked_boxes(
             int(text_thickness),
             cv2.LINE_AA,
         )
+
+    return frame
+
+
+def draw_status_block(
+    frame: np.ndarray,
+    lines: Sequence[str],
+    *,
+    enabled: bool = True,
+    origin: tuple = (20, 72),
+    text_scale: float = 0.65,
+    text_thickness: int = 2,
+):
+    """Draw a top-left multi-line status block used for failure handling."""
+    if not enabled or frame is None or not lines:
+        return frame
+
+    filtered_lines = [str(line) for line in lines if str(line).strip()]
+    if not filtered_lines:
+        return frame
+
+    h_img, w_img = frame.shape[:2]
+    x0, y0 = int(origin[0]), int(origin[1])
+    x0 = max(0, min(w_img - 1, x0))
+    y0 = max(20, min(h_img - 1, y0))
+
+    pad = 8
+    line_gap = 6
+    metrics = [
+        cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, float(text_scale), int(text_thickness))
+        for line in filtered_lines
+    ]
+    max_w = max((m[0][0] for m in metrics), default=0)
+    total_h = sum(m[0][1] + m[1] for m in metrics) + line_gap * max(0, len(metrics) - 1)
+
+    bx1 = max(0, x0 - pad)
+    by1 = max(0, y0 - metrics[0][0][1] - pad)
+    bx2 = min(w_img - 1, x0 + max_w + pad)
+    by2 = min(h_img - 1, by1 + total_h + 2 * pad)
+
+    roi = frame[by1 : by2 + 1, bx1 : bx2 + 1]
+    if roi.size > 0:
+        black = np.zeros_like(roi)
+        cv2.addWeighted(black, 0.50, roi, 0.50, 0.0, dst=roi)
+
+    y = y0
+    for line, ((_, th), baseline) in zip(filtered_lines, metrics, strict=False):
+        cv2.putText(
+            frame,
+            line,
+            (x0, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            float(text_scale),
+            (255, 255, 255),
+            int(text_thickness),
+            cv2.LINE_AA,
+        )
+        y += th + baseline + line_gap
 
     return frame

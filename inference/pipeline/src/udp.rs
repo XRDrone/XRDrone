@@ -1,5 +1,5 @@
 use crate::common::{
-    any_to_class_map, any_to_string_set, dict_string_lower_chain, parse_bbox, py_get, safe_bool_opt,
+    any_to_class_map, any_to_string_set, dict_string_lower_chain, parse_bbox, py_get,
     safe_float_opt,
 };
 use crate::geometry::xyxy_to_xywhn;
@@ -39,7 +39,9 @@ pub fn to_unity_udp_packet(
             py_get(det, "udp_confidence").or_else(|| py_get(det, "confidence")),
             0.0,
         );
-        let force_emit = safe_bool_opt(py_get(det, "force_udp_emit"), false);
+        let force_emit = py_get(det, "force_udp_emit")
+            .and_then(|v| v.extract::<bool>().ok())
+            .unwrap_or(false);
         if let Some(min_conf_f) = min_conf_f {
             if conf < min_conf_f && !force_emit {
                 continue;
@@ -59,11 +61,6 @@ pub fn to_unity_udp_packet(
             .and_then(|v| v.extract::<i64>().ok())
             .unwrap_or(i as i64);
 
-        let world_valid = safe_bool_opt(py_get(det, "world_valid"), false);
-        let world_x = safe_float_opt(py_get(det, "world_x"), 0.0);
-        let world_y = safe_float_opt(py_get(det, "world_y"), 0.0);
-        let world_z = safe_float_opt(py_get(det, "world_z"), 0.0);
-
         let out_det = PyDict::new_bound(py);
         out_det.set_item("id", det_id)?;
         out_det.set_item("cls", *class_map.get(&cls_name).unwrap_or(&-1))?;
@@ -74,10 +71,6 @@ pub fn to_unity_udp_packet(
         out_det.set_item("h", h)?;
         out_det.set_item("foot_x", safe_float_opt(py_get(det, "foot_x"), default_foot_x))?;
         out_det.set_item("foot_y", safe_float_opt(py_get(det, "foot_y"), default_foot_y))?;
-        out_det.set_item("world_valid", world_valid)?;
-        out_det.set_item("world_x", world_x)?;
-        out_det.set_item("world_y", world_y)?;
-        out_det.set_item("world_z", world_z)?;
         dets.append(out_det)?;
     }
 

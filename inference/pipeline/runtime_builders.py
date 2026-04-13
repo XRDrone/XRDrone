@@ -14,10 +14,6 @@ from types import SimpleNamespace
 
 import settings as S
 import torch
-from adaptive_tuning import AdaptiveRuntimeTuner
-from id_flicker_mitigation import RobustIDFlickerMitigator
-from motion_smoothing import PoseMotionSmoother, WorldTrackSmoother
-from pose_estimator import ArucoPoseEstimator
 from ultralytics import YOLO
 
 # Fixed optimized pipeline policy (removed from settings.py).
@@ -130,7 +126,9 @@ def build_models():
     )
 
 
-def build_pose_estimator() -> ArucoPoseEstimator:
+def build_pose_estimator():
+    from pose_estimator import ArucoPoseEstimator
+
     return ArucoPoseEstimator(
         enabled=bool(getattr(S, "POSE_ENABLED_DEFAULT", True)),
         hfov_deg=float(getattr(S, "POSE_HFOV_DEG", 84.0)),
@@ -158,7 +156,12 @@ def build_pose_estimator() -> ArucoPoseEstimator:
     )
 
 
-def make_pose_motion_smoother() -> PoseMotionSmoother:
+def make_pose_motion_smoother():
+    try:
+        from motion_smoothing import PoseMotionSmoother
+    except ModuleNotFoundError:
+        return None
+
     return PoseMotionSmoother(
         enabled=POSE_MOTION_SMOOTHING_ENABLED,
         smoothness=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
@@ -168,7 +171,12 @@ def make_pose_motion_smoother() -> PoseMotionSmoother:
     )
 
 
-def make_world_motion_smoother() -> WorldTrackSmoother:
+def make_world_motion_smoother():
+    try:
+        from motion_smoothing import WorldTrackSmoother
+    except ModuleNotFoundError:
+        return None
+
     return WorldTrackSmoother(
         enabled=WORLD_MOTION_SMOOTHING_ENABLED,
         smoothness=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
@@ -179,7 +187,9 @@ def make_world_motion_smoother() -> WorldTrackSmoother:
     )
 
 
-def make_id_flicker_mitigator() -> RobustIDFlickerMitigator:
+def make_id_flicker_mitigator():
+    from id_flicker_mitigation import RobustIDFlickerMitigator
+
     return RobustIDFlickerMitigator(
         enabled=ID_FLICKER_MITIGATION_ENABLED,
         apply_classes=getattr(S, "ID_FLICKER_APPLY_CLASSES", ("person",)),
@@ -194,7 +204,12 @@ def make_id_flicker_mitigator() -> RobustIDFlickerMitigator:
     )
 
 
-def make_adaptive_runtime_tuner() -> AdaptiveRuntimeTuner:
+def make_adaptive_runtime_tuner():
+    try:
+        from adaptive_tuning import AdaptiveRuntimeTuner
+    except ModuleNotFoundError:
+        return None
+
     return AdaptiveRuntimeTuner(
         enabled=bool(getattr(S, "ADAPTIVE_TUNING_ENABLED", True)),
         target_classes=getattr(S, "ADAPTIVE_TUNING_TARGET_CLASSES", ("person",)),

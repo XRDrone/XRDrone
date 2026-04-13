@@ -15,10 +15,20 @@ from frame_io import format_frame
 from merger import merge_detections
 from output_formatter import to_unity_udp_packet
 from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
-from rendering import draw_pose_mode_status
-from runtime_builders import build_models, build_pose_estimator, make_pose_motion_smoother
+from runtime_builders import build_models
 from streaming import UDPPublisher
-from world_projection import attach_foot_and_world
+
+
+def _attach_detection_footpoints(merged: list[dict], *, width: int, height: int) -> None:
+    width_f = float(max(1, width))
+    height_f = float(max(1, height))
+    for det in merged:
+        bbox = det.get("bbox_xyxy")
+        if not bbox or len(bbox) != 4:
+            continue
+        x1, _y1, x2, y2 = (float(v) for v in bbox)
+        det["foot_x"] = max(0.0, min(1.0, ((x1 + x2) * 0.5) / width_f))
+        det["foot_y"] = max(0.0, min(1.0, y2 / height_f))
 
 
 def run_test(args) -> int:
@@ -32,19 +42,10 @@ def run_test(args) -> int:
     now = time.time()
     frame_id = 1
 
-    pose_estimator = build_pose_estimator()
-    pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False))
-    pose_mode_overlay_on = bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True))
-    pose_smoother = make_pose_motion_smoother()
-
-    infer_frame = frame.copy() if pose_draw else frame
-    pose_data, pose_solution = pose_estimator.estimate_with_solution(frame, draw=pose_draw)
-    pose_data, pose_solution = pose_smoother.smooth(pose_data, pose_solution, timestamp=now)
-
     pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
 
     people_results = people_seg_model.predict(
-        infer_frame,
+        frame,
         conf=S.PEOPLE_CONF,
         classes=detect_class_ids,
         **pred_kw,
@@ -52,7 +53,7 @@ def run_test(args) -> int:
 
     fire_results = []
     if S.FIRE_ON_DEFAULT:
-        fire_results = fire_model.predict(infer_frame, conf=S.FIRE_CONF, **pred_kw)
+        fire_results = fire_model.predict(frame, conf=S.FIRE_CONF, **pred_kw)
 
     merged = merge_detections(
         people_results,
@@ -66,15 +67,7 @@ def run_test(args) -> int:
             det["class"] = "person"
 
     height, width = frame.shape[:2]
-    attach_foot_and_world(
-        merged,
-        pose_data=pose_data,
-        pose_solution=pose_solution,
-        width=width,
-        height=height,
-        projection_classes=S.UDP_SEND_CLASSES,
-        projection_min_conf=S.UDP_MIN_CONF,
-    )
+    _attach_detection_footpoints(merged, width=width, height=height)
 
     packet = to_unity_udp_packet(
         merged,
@@ -86,7 +79,6 @@ def run_test(args) -> int:
         allowed_classes=S.UDP_SEND_CLASSES,
         min_conf=S.UDP_MIN_CONF,
     )
-    packet["pose"] = pose_data
 
     print("[UDP] JSON payload (one-line):")
     print(json.dumps(packet))
@@ -105,16 +97,6 @@ def run_test(args) -> int:
         dji_overlay = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
         if S.DJI_MENU_OVERLAY_ENABLED_DEFAULT and dji_overlay is not None:
             frame = apply_rgba_overlay_fullframe(frame, dji_overlay)
-
-        if pose_mode_overlay_on:
-            frame = draw_pose_mode_status(
-                frame,
-                pose_estimator.get_pose_mode_overlay_text(),
-                enabled=pose_mode_overlay_on,
-                origin=getattr(S, "POSE_MODE_OVERLAY_ORIGIN", (20, 40)),
-                text_scale=float(getattr(S, "POSE_MODE_OVERLAY_TEXT_SCALE", 0.9)),
-                text_thickness=int(getattr(S, "POSE_MODE_OVERLAY_TEXT_THICKNESS", 2)),
-            )
 
         cv2.imshow(S.WINDOW_NAME, frame)
         cv2.waitKey(0)
