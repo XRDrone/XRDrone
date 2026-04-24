@@ -1,16 +1,16 @@
 # Contributing
 
-Thank you for contributing to XRDrone. This document describes the expected workflow for development, testing, documentation updates, and pull requests.
+Thank you for contributing to XRDrone. This document describes the workflow for development, testing, documentation updates, and submitting pull requests.
 
-XRDrone is a docs-first repository. The top-level README is a project summary, while detailed technical references live in `docs/`.
+The repository uses a docs-first structure, so detailed documentation lives in the `docs/` directory rather than in the top-level README.
 
 ---
 
 # 1. Development Environment
 
-Set up the Python environment and build the Rust native module used by the mixed Python + Rust backend.
+Before contributing, set up both the Python environment and the Rust native build used by the mixed Python + Rust pipeline.
 
-Recommended setup:
+Recommended steps:
 
 ```bash
 python3 -m venv yolovenv
@@ -28,25 +28,23 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 bash build_native.sh
 ```
 
-See `docs/setup.md` for environment and runtime setup details.
+See: `docs/setup.md`
 
-Each contributor must build the native module in their own clone and active virtual environment.
+Each contributor must build the native module in their own local clone and active virtual environment.
 
 ---
 
 # 2. Repository Documentation
 
-Read the relevant docs before making structural changes.
-
 Main documentation files:
 
-- `docs/setup.md` – environment setup and runtime setup
+- `docs/setup.md` – environment setup, native build, and verification
 - `docs/settings.md` – runtime configuration settings
 - `docs/udp-json.md` – UDP packet schema used for Unity communication
-- `docs/runtime-ui-and-terminal-reference.md` – runtime overlay and terminal reference
-- `docs/testing.md` – validation and testing procedures
+- `docs/runtime-ui-and-terminal-reference.md` – runtime overlay and terminal text reference
+- `docs/testing.md` – UDP validation and testing procedures
 
-If your change affects behavior, setup, schema, overlays, or testing flow, update the matching document in the same PR.
+Contributors should review these files before making structural changes.
 
 ---
 
@@ -61,13 +59,13 @@ ruff check .
 ruff format .
 ```
 
-Optional pre-commit setup:
+Optional automatic hook:
 
 ```bash
 pre-commit install
 ```
 
-Rust changes should compile cleanly through the project build script:
+Rust changes should also compile cleanly through the project build script:
 
 ```bash
 bash build_native.sh
@@ -99,7 +97,7 @@ source yolovenv/bin/activate
 bash build_native.sh
 ```
 
-Do not commit `target/` or other local build artifacts.
+Do not treat `target/` or other local build output as source files to commit.
 
 ---
 
@@ -124,97 +122,70 @@ Push the branch:
 git push origin feature/your-feature
 ```
 
-Then open a pull request.
+Then open a Pull Request.
 
 ---
 
-# 6. ORB-SLAM Middle-Man Workflow
-
-The current backend architecture assumes a split pipeline:
-
-1. A shared video source is exposed through MediaMTX
-2. The XRDrone detection pipeline reads that stream
-3. ORB-SLAM reads that same stream separately
-4. ORB-SLAM sends pose packets over UDP to the backend middle-man
-5. The backend fuses detection output with ORB-SLAM pose input
-6. The fused UDP packet is sent to Unity
-
-If you are changing the ORB-SLAM integration path, update all affected areas together:
-
-- runtime settings in `settings.py`
-- packet schema in `docs/udp-json.md`
-- testing instructions in `docs/testing.md`
-- runtime status or overlays in `docs/runtime-ui-and-terminal-reference.md`
-
-Do not leave the implementation and docs out of sync.
-
----
-
-# 7. Testing Changes
+# 6. Testing Changes
 
 Testing instructions are documented in `docs/testing.md`.
 
 Typical validation workflow:
 
-1. Build the native module with `bash build_native.sh`
-2. Run the pipeline with `python main.py`
-3. Verify detection runtime behavior
-4. Verify ORB-SLAM pose reception if fusion is enabled
-5. Confirm UDP packets match the documented schema
-6. Confirm Unity receives the expected fused output
-7. Run `python test_with_coverage.py` when packet structure or transport behavior changes
+1. Build the native module (`bash build_native.sh`)
+2. Run the pipeline (`python main.py`)
+3. Verify detections and pose behavior
+4. Confirm UDP packets match schema
+5. Confirm Unity receives detections and pose data
 
-Algorithm or architecture changes should include a reproducible demonstration, screenshot, or comparable artifact when practical.
+Algorithm changes should include a reproducible demonstration.
 
 ---
 
-# 8. UDP JSON Protocol Changes
+# 7. UDP JSON Protocol Changes
 
 Changes to the UDP schema must:
 
 1. Be documented in `docs/udp-json.md`
-2. Preserve Unity compatibility when possible
-3. Be validated with `test_with_coverage.py`
+2. Maintain compatibility with Unity when possible
+3. Be validated using `test_with_coverage.py`
 
-Unity-facing packet changes are high impact and should not be merged without synchronized documentation.
+Unity components depend on this schema remaining stable.
 
 ---
 
-# 9. Configuration Changes
+# 8. Configuration Changes
 
 Runtime behavior is controlled by `settings.py`.
 
-Examples include:
+Examples:
 
 - detection thresholds
 - smoothing parameters
-- UDP output settings
-- MediaMTX input settings
-- ORB-SLAM UDP receiver settings
-- pose and projection configuration
+- pose configuration
 - adaptive tuning parameters
 
-If you add or modify a setting:
+If new configuration options are added:
 
-1. Update `settings.py`
-2. Document it in `docs/settings.md`
-3. Provide a reasonable default
-4. Note any expected downstream impact on Unity, tests, or runtime setup
+1. Add them to `settings.py`
+2. Document them in `docs/settings.md`
+3. Provide default values
+
+If a change is implementation-only and preserves the current Python-facing settings contract, document the behavior where relevant without renaming existing settings unnecessarily.
 
 ---
 
-# 10. Documentation Updates
+# 9. Documentation Updates
 
 Documentation must stay synchronized with implementation.
 
-Update docs when:
+Update documentation when:
 
 - pipeline behavior changes
 - settings are added or removed
 - runtime overlays or terminal outputs change
 - UDP packet structure changes
 - setup or build steps change
-- MediaMTX or ORB-SLAM integration changes
 - native build requirements change
 
 Relevant documentation:
@@ -227,14 +198,14 @@ Relevant documentation:
 
 ---
 
-# 11. Pull Request Requirements
+# 10. Pull Request Requirements
 
-Before submitting a PR, ensure:
+Before submitting a PR ensure:
 
 - Python code passes `ruff check`
 - Python code is formatted with `ruff format`
-- `bash build_native.sh` succeeds when relevant
-- the pipeline runs without known runtime errors for the changed path
+- `bash build_native.sh` succeeds
+- the pipeline runs without runtime errors
 - documentation is updated if behavior changes
 - no unnecessary files are committed
 
@@ -249,17 +220,18 @@ Do not commit:
 
 ---
 
-# 12. Commit Message Guidelines
+# 11. Commit Message Guidelines
 
 Examples:
 
-- `Set up ORB-SLAM middle-man UDP receiver`
-- `Update Unity packet schema for fused ORB-SLAM data`
-- `Add integration testing for ORB-SLAM fusion path`
-- `Update documentation for MediaMTX and ORB-SLAM workflow`
+- `Add motion smoothing for ArUco pose updates`
+- `Optimize UDP packet serialization`
+- `Implement adaptive runtime tuning`
+- `Port hot-path helper modules to Rust`
+- `Update documentation for native build workflow`
 
 ---
 
-# 13. Questions
+# 12. Questions
 
-If you are unsure about a major architecture decision, schema change, or workflow change, open an issue or start a design discussion before implementing a large change.
+If unsure about architecture decisions or major pipeline changes, open an issue before implementing large modifications.
