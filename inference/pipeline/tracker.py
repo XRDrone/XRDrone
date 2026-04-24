@@ -8,6 +8,7 @@ Assigns stable track IDs to detections across frames using:
   - Composite data association that can fuse:
       - bbox IoU
       - normalized foot-point distance
+      - ground-plane distance when world registration is available
 
 Works directly with merged detection dicts from merger.py.
 
@@ -117,6 +118,9 @@ class _Track:
     kf: cv2.KalmanFilter | None = None
     foot_x: float | None = None
     foot_y: float | None = None
+    world_valid: bool = False
+    world_x: float = 0.0
+    world_z: float = 0.0
 
 
 class OpenCVKalmanIOUTracker:
@@ -134,8 +138,11 @@ class OpenCVKalmanIOUTracker:
         matching_method: str = "greedy",
         min_match_score: float = 0.45,
         max_foot_distance_norm: float = 0.08,
-        iou_score_weight: float = 0.70,
-        foot_score_weight: float = 0.30,
+        max_world_distance_m: float = 2.5,
+        use_world_position: bool = True,
+        world_score_weight: float = 0.65,
+        iou_score_weight: float = 0.25,
+        foot_score_weight: float = 0.10,
     ) -> None:
         self.min_iou = float(min_iou)
         self.max_age = int(max_age_frames)
@@ -147,6 +154,9 @@ class OpenCVKalmanIOUTracker:
 
         self.min_match_score = float(min_match_score)
         self.max_foot_distance_norm = max(1e-6, float(max_foot_distance_norm))
+        self.max_world_distance_m = max(1e-6, float(max_world_distance_m))
+        self.use_world_position = bool(use_world_position)
+        self.world_score_weight = max(0.0, float(world_score_weight))
         self.iou_score_weight = max(0.0, float(iou_score_weight))
         self.foot_score_weight = max(0.0, float(foot_score_weight))
 
@@ -194,6 +204,13 @@ class OpenCVKalmanIOUTracker:
     def _update_track_spatial_memory(self, tr: _Track, det: dict[str, Any]) -> None:
         tr.foot_x = _as_optional_float(det.get("foot_x"))
         tr.foot_y = _as_optional_float(det.get("foot_y"))
+        tr.world_valid = bool(det.get("world_valid", False))
+        if tr.world_valid:
+            tr.world_x = float(det.get("world_x", 0.0))
+            tr.world_z = float(det.get("world_z", 0.0))
+        else:
+            tr.world_x = 0.0
+            tr.world_z = 0.0
 
     def _spawn_track(self, det: dict[str, Any]) -> _Track:
         bbox = det.get("bbox_xyxy")
@@ -228,6 +245,23 @@ class OpenCVKalmanIOUTracker:
             return 0.0
         return max(0.0, 1.0 - dist / self.max_foot_distance_norm)
 
+    def _world_similarity(self, tr: _Track, det: dict[str, Any]) -> float:
+        if (
+            not self.use_world_position
+            or not tr.world_valid
+            or not bool(det.get("world_valid", False))
+        ):
+            return 0.0
+        try:
+            det_wx = float(det.get("world_x", 0.0))
+            det_wz = float(det.get("world_z", 0.0))
+        except Exception:
+            return 0.0
+        dist = float(np.hypot(det_wx - tr.world_x, det_wz - tr.world_z))
+        if dist > self.max_world_distance_m:
+            return 0.0
+        return max(0.0, 1.0 - dist / self.max_world_distance_m)
+
     def _build_score_matrix(
         self,
         track_ids: list[int],
@@ -254,21 +288,47 @@ class OpenCVKalmanIOUTracker:
                 det = detections[di]
                 iou = float(iou_mat[local_ti, local_di])
                 foot_sim = self._foot_similarity(tr, det)
+                world_sim = self._world_similarity(tr, det)
+
+                use_world_pair = (
+                    self.use_world_position
+                    and tr.world_valid
+                    and bool(det.get("world_valid", False))
+                )
                 use_foot_pair = foot_sim > 0.0
 
-                if iou < self.min_iou and not use_foot_pair:
-                    score_mat[local_ti, local_di] = 0.0
-                    continue
+                if use_world_pair:
+                    # World-space association is the primary drone-specific cue;
+                    # IoU/foot act as tie-breakers.
+                    numer = self.world_score_weight * world_sim
+                    denom = self.world_score_weight
 
-                numer = 0.0
-                denom = 0.0
-                if self.iou_score_weight > 0.0:
-                    numer += self.iou_score_weight * iou
-                    denom += self.iou_score_weight
-                if use_foot_pair and self.foot_score_weight > 0.0:
-                    numer += self.foot_score_weight * foot_sim
-                    denom += self.foot_score_weight
-                score = numer / denom if denom > 0.0 else 0.0
+                    if self.iou_score_weight > 0.0:
+                        numer += self.iou_score_weight * iou
+                        denom += self.iou_score_weight
+                    if use_foot_pair and self.foot_score_weight > 0.0:
+                        numer += self.foot_score_weight * foot_sim
+                        denom += self.foot_score_weight
+
+                    score = numer / denom if denom > 0.0 else 0.0
+                    if world_sim <= 0.0:
+                        score = 0.0
+                else:
+                    # Fallback when world registration is unavailable:
+                    # require either enough IoU or a close foot point.
+                    if iou < self.min_iou and not use_foot_pair:
+                        score_mat[local_ti, local_di] = 0.0
+                        continue
+
+                    numer = 0.0
+                    denom = 0.0
+                    if self.iou_score_weight > 0.0:
+                        numer += self.iou_score_weight * iou
+                        denom += self.iou_score_weight
+                    if use_foot_pair and self.foot_score_weight > 0.0:
+                        numer += self.foot_score_weight * foot_sim
+                        denom += self.foot_score_weight
+                    score = numer / denom if denom > 0.0 else 0.0
 
                 score_mat[local_ti, local_di] = float(max(0.0, min(1.0, score)))
 

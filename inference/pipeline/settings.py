@@ -189,26 +189,6 @@ POSE_MODE_OVERLAY_ORIGIN = (20, 40)
 POSE_MODE_OVERLAY_TEXT_SCALE = 0.9
 POSE_MODE_OVERLAY_TEXT_THICKNESS = 2
 
-
-# -----------------------------
-# ORB-SLAM fusion middle-man
-# -----------------------------
-# When enabled, the live runtime listens for externally generated ORB-SLAM
-# pose packets over UDP, aligns them to detector frames, projects foot points
-# onto a ground plane, and publishes the fused result to Unity.
-ORBSLAM_FUSION_ENABLED = True
-ORBSLAM_UDP_LISTEN_IP = "127.0.0.1"
-ORBSLAM_UDP_PORT = 5010
-ORBSLAM_UDP_MAX_PACKET_BYTES = 65535
-ORBSLAM_PACKET_STALE_TIMEOUT_S = 0.50
-ORBSLAM_MATCH_TIME_TOLERANCE_S = 0.10
-ORBSLAM_POSE_BUFFER_SIZE = 4096
-ORBSLAM_GROUND_PLANE_Y = 0.0
-ORBSLAM_STATUS_OVERLAY_ENABLED = True
-ORBSLAM_STATUS_OVERLAY_ORIGIN = (20, 72)
-ORBSLAM_STATUS_OVERLAY_TEXT_SCALE = 0.65
-ORBSLAM_STATUS_OVERLAY_TEXT_THICKNESS = 2
-
 # -----------------------------
 # Motion smoothing (ArUco-based object registration)
 # -----------------------------

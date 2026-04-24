@@ -7,6 +7,6 @@ models/yolo_people_fire_smoke/runs/
 *__pycache__
 *.avif
 *.pt
+tools/
 inference/pipeline/runs/
 inference/pipeline/target/
-tools/data/
