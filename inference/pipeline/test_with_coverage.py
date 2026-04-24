@@ -55,13 +55,6 @@ from typing import Any
 
 import cv2
 import settings as S
-from orbslam_fusion import (
-    attach_foot_and_world_from_orbslam,
-    build_fusion_status,
-    build_pose_packet,
-    build_slam_packet,
-    parse_orbslam_udp_packet,
-)
 from output_formatter import to_unity_udp_packet
 from streaming import UDPPublisher
 
@@ -72,8 +65,6 @@ EXPECTED_TOP_LEVEL_KEYS = {
     "height",
     "detections",
     "pose",
-    "slam",
-    "fusion_status",
 }
 
 EXPECTED_DETECTION_KEYS = {
@@ -102,32 +93,6 @@ EXPECTED_POSE_KEYS = {
     "hfov",
     "markers_used",
     "pose_valid",
-}
-
-EXPECTED_SLAM_KEYS = {
-    "tracking_state",
-    "match_mode",
-    "pose_valid",
-    "frame_id",
-    "timestamp",
-    "x",
-    "y",
-    "z",
-    "qx",
-    "qy",
-    "qz",
-    "qw",
-}
-
-EXPECTED_FUSION_STATUS_KEYS = {
-    "source",
-    "slam_tracking",
-    "match_mode",
-    "projection_state",
-    "pose_valid",
-    "projection_attempted",
-    "projection_projected",
-    "reason",
 }
 
 
@@ -167,8 +132,6 @@ def _validate_top_level(pkt: dict[str, Any]) -> None:
     _assert_type(pkt["height"], int, "height")
     _assert_type(pkt["detections"], list, "detections")
     _assert_type(pkt["pose"], dict, "pose")
-    _assert_type(pkt["slam"], dict, "slam")
-    _assert_type(pkt["fusion_status"], dict, "fusion_status")
 
     if pkt["width"] <= 0 or pkt["height"] <= 0:
         raise AssertionError("width and height must be positive")
@@ -205,29 +168,6 @@ def _validate_pose(pose: dict[str, Any]) -> None:
         raise AssertionError("pose.markers_used must be non-negative")
 
 
-def _validate_slam(slam: dict[str, Any]) -> None:
-    _assert_exact_keys(slam, EXPECTED_SLAM_KEYS, "slam")
-    _assert_type(slam["tracking_state"], str, "slam.tracking_state")
-    _assert_type(slam["match_mode"], str, "slam.match_mode")
-    _assert_type(slam["pose_valid"], bool, "slam.pose_valid")
-    _assert_type(slam["frame_id"], (int, type(None)), "slam.frame_id")
-    _assert_type(slam["timestamp"], (int, float, type(None)), "slam.timestamp")
-    for key in ("x", "y", "z", "qx", "qy", "qz", "qw"):
-        _assert_type(slam[key], (int, float), f"slam.{key}")
-
-
-def _validate_fusion_status(status: dict[str, Any]) -> None:
-    _assert_exact_keys(status, EXPECTED_FUSION_STATUS_KEYS, "fusion_status")
-    _assert_type(status["source"], str, "fusion_status.source")
-    _assert_type(status["slam_tracking"], str, "fusion_status.slam_tracking")
-    _assert_type(status["match_mode"], str, "fusion_status.match_mode")
-    _assert_type(status["projection_state"], str, "fusion_status.projection_state")
-    _assert_type(status["pose_valid"], bool, "fusion_status.pose_valid")
-    _assert_type(status["projection_attempted"], int, "fusion_status.projection_attempted")
-    _assert_type(status["projection_projected"], int, "fusion_status.projection_projected")
-    _assert_type(status["reason"], str, "fusion_status.reason")
-
-
 def _validate_packet(pkt: dict[str, Any]) -> None:
     _validate_top_level(pkt)
 
@@ -237,8 +177,6 @@ def _validate_packet(pkt: dict[str, Any]) -> None:
         _validate_detection(det, i)
 
     _validate_pose(pkt["pose"])
-    _validate_slam(pkt["slam"])
-    _validate_fusion_status(pkt["fusion_status"])
 
 
 def _build_sample_packet() -> dict[str, Any]:
@@ -260,35 +198,6 @@ def _build_sample_packet() -> dict[str, Any]:
         }
     ]
 
-    slam_packet = {
-        "source": "orbslam",
-        "frame_id": 1,
-        "timestamp": 1234567890.123,
-        "pose_valid": True,
-        "tracking_state": "ok",
-        "x": 1.0,
-        "y": 2.0,
-        "z": 3.0,
-        "qx": 0.0,
-        "qy": 0.0,
-        "qz": 0.0,
-        "qw": 1.0,
-    }
-    slam_pose = parse_orbslam_udp_packet(slam_packet)
-    if slam_pose is None:
-        raise AssertionError("failed to parse sample ORB-SLAM UDP packet")
-
-    projection_counts = attach_foot_and_world_from_orbslam(
-        merged_detections,
-        pose=slam_pose,
-        width=width,
-        height=height,
-        hfov_deg=float(S.POSE_HFOV_DEG),
-        projection_classes=tuple(S.UDP_SEND_CLASSES),
-        projection_min_conf=float(S.UDP_MIN_CONF),
-        ground_plane_y=float(getattr(S, "ORBSLAM_GROUND_PLANE_Y", 0.0)),
-    )
-
     pkt = to_unity_udp_packet(
         merged_detections,
         frame_id=1,
@@ -300,16 +209,17 @@ def _build_sample_packet() -> dict[str, Any]:
         min_conf=S.UDP_MIN_CONF,
     )
 
-    pkt["pose"] = build_pose_packet(slam_pose, hfov_deg=float(S.POSE_HFOV_DEG))
-    pkt["slam"] = build_slam_packet(slam_pose, tracking_state="ok", match_mode="frame_id")
-    pkt["fusion_status"] = build_fusion_status(
-        source="orbslam",
-        pose=slam_pose,
-        match_mode="frame_id",
-        reader_error=None,
-        projection_attempted=projection_counts["attempted"],
-        projection_projected=projection_counts["projected"],
-    )
+    pkt["pose"] = {
+        "x": 0.0,
+        "altitude": 0.0,
+        "z": 0.0,
+        "yaw": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "hfov": float(S.POSE_HFOV_DEG),
+        "markers_used": 0,
+        "pose_valid": False,
+    }
 
     return pkt
 

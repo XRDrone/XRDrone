@@ -1,4 +1,4 @@
-# XRDrone Detector + ORB-SLAM Fusion Pipeline
+# XRDrone UDP Pipeline Documentation
 
 This repository keeps the pipeline documentation split into focused Markdown files inside `docs/`. Use those files as the main reference for setup, runtime behavior, packet structure, settings, and runtime output.
 
@@ -16,7 +16,7 @@ The application entrypoints and orchestration are still Python:
 - `live_runner.py`
 - `test_runner.py`
 - `pose_estimator.py`
-- rendering, capture, detector-to-SLAM fusion, and UDP orchestration
+- rendering, capture, and UDP orchestration
 
 Several hot-path helper modules keep their original Python filenames but are backed by the native `xrdrone_native` extension after build:
 
@@ -34,7 +34,6 @@ The Rust implementation is now split into focused source files under `src/` inst
 - `src/id_flicker.rs`: tracked-object continuity and coasting
 - `src/world_projection.rs`: foot-point extraction and world-ground projection
 - `src/udp.rs`: Unity UDP packet formatting
-- `orbslam_fusion.py`: ORB-SLAM pose-file parsing, frame/time alignment, and 3D projection
 - `src/adaptive_tuning.rs`: bounded runtime tuning controller
 - `src/smoothing.rs`: One Euro filters plus pose and world-track smoothing
 
@@ -78,10 +77,3 @@ If any file in `src/` or `Cargo.toml` changes, rebuild the extension.
 - Keep detailed operational and protocol documentation there instead of expanding this top-level README.
 - Add new documentation files to `docs/` so related information remains grouped together.
 - The UDP schema is unchanged by the Rust port. The native module accelerates selected helper stages while preserving the existing Python-facing module names and packet contract.
-
-
-## ORB-SLAM Middle-Man Flow
-
-The backend now treats human detection and ORB-SLAM as separate branches that are fused in the Python middle-man before the packet is sent to Unity. The detector branch still produces image-space boxes and IDs. The ORB-SLAM branch now sends camera poses over UDP as JSON packets with `frame_id`, `timestamp`, `pose_valid`, `tracking_state`, `x`, `y`, `z`, `qx`, `qy`, `qz`, and `qw`. The fusion layer listens on a dedicated UDP port, matches by `frame_id` first, falls back to timestamp within a configurable tolerance, projects foot points onto the configured ground plane, and then publishes one combined UDP packet containing detections, projected world coordinates, a compatibility `pose` object, a raw `slam` object, and a `fusion_status` object.
-
-When MediaMTX is used, the recommended layout is to let both branches consume the same stream source and let the middle-man remain the only stage that builds Unity-facing packets.
