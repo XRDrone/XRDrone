@@ -51,3 +51,7 @@ inference/pipeline/runs/
 
 # Generated tree output
 tree.txt
+
+# Generated local output
+inference/pipeline/runs/
+inference/pipeline/yolovenv/
