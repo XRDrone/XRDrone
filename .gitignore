@@ -1,12 +1,53 @@
-.env
-*.csv
-*.json
-*.mp4
-models/yolo_people_fire_smoke/__pycache__/
-models/yolo_people_fire_smoke/runs/
-*__pycache__
-*.avif
-*.pt
-inference/pipeline/runs/
+# macOS
+.DS_Store
+
+# Python cache / compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python virtual environments
+.venv/
+venv/
+env/
+yolovenv/
+inference/pipeline/yolovenv/
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Rust / Cargo build output
+target/
 inference/pipeline/target/
-tools/data/
+
+# Native compiled artifacts
+*.dylib
+*.so
+*.dll
+*.a
+
+# Model weights / large ML binaries
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# YOLO / detection run outputs
+runs/
+inference/pipeline/runs/
+
+# Local logs / temporary files
+*.log
+*.tmp
+*.temp
+
+# Local environment files
+.env
+.env.*
+
+# Generated tree output
+tree.txt
