@@ -16,3 +16,11 @@ target/
 src/
 runs/
 target/
+# Archives / large local files
+*.zip
+
+# macOS
+.DS_Store
+
+# Build artifacts
+target/
