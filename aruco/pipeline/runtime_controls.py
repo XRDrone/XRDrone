@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import settings as S
 from frame_io import open_capture
-from motion_smoothing import PoseMotionSmoother, WorldTrackSmoother
 
 
 @dataclass
@@ -45,8 +45,8 @@ def format_adaptive_metrics(metrics) -> str:
 
 
 def update_motion_smoothing_value(
-    pose_smoother: PoseMotionSmoother | None,
-    world_smoother: WorldTrackSmoother | None,
+    pose_smoother: Any | None,
+    world_smoother: Any | None,
     value: float,
 ) -> float:
     value = max(0.0, min(1.0, float(value)))
@@ -58,8 +58,10 @@ def update_motion_smoothing_value(
 
 
 def _reset_runtime_filters(pose_smoother, world_smoother, id_flicker_mitigator, adaptive_tuner):
-    pose_smoother.reset()
-    world_smoother.reset()
+    if pose_smoother is not None:
+        pose_smoother.reset()
+    if world_smoother is not None:
+        world_smoother.reset()
     id_flicker_mitigator.reset()
     adaptive_tuner.reset()
 
@@ -166,11 +168,14 @@ def handle_runtime_key(
             )
 
     elif key in getattr(S, "KEY_TOGGLE_MOTION_SMOOTHING", (ord("g"), ord("G"))):
-        new_enabled = not bool(pose_smoother.enabled)
-        pose_smoother.set_enabled(new_enabled)
-        world_smoother.set_enabled(new_enabled)
-        status = "ENABLED" if new_enabled else "DISABLED"
-        print(f"Motion smoothing {status} | value={state.motion_smoothing_value:.2f}")
+        if pose_smoother is None or world_smoother is None:
+            print("Motion smoothing controls are unavailable in this runtime mode")
+        else:
+            new_enabled = not bool(pose_smoother.enabled)
+            pose_smoother.set_enabled(new_enabled)
+            world_smoother.set_enabled(new_enabled)
+            status = "ENABLED" if new_enabled else "DISABLED"
+            print(f"Motion smoothing {status} | value={state.motion_smoothing_value:.2f}")
 
     elif key in getattr(S, "KEY_DECREASE_MOTION_SMOOTHING", (ord("["), ord("{"))):
         state.motion_smoothing_value = update_motion_smoothing_value(
