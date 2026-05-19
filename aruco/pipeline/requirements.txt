@@ -44,7 +44,7 @@ torchvision==0.25.0
 typing_extensions==4.15.0
 ultralytics==8.4.18
 ultralytics-thop==2.0.18
-urllib3==2.6.3
+urllib3==2.7.0
 virtualenv==21.2.0
 wheel==0.46.3
 -e git+https://github.com/XRDrone/XRDrone@1fcc43534903ec166f8c5141a111028a54be48d2#egg=xrdrone_native&subdirectory=inference/pipeline
