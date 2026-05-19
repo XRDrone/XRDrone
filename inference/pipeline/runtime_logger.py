@@ -29,7 +29,9 @@ class RuntimeLogger:
         self._packet_f = (self.run_dir / "packets_log.jsonl").open("w", encoding="utf-8")
         self._marker_f = (self.run_dir / "marker_log.jsonl").open("w", encoding="utf-8")
         self._error_f = (self.run_dir / "errors_log.jsonl").open("w", encoding="utf-8")
-        self._frame_csv_f = (self.run_dir / "frames_log.csv").open("w", newline="", encoding="utf-8")
+        self._frame_csv_f = (self.run_dir / "frames_log.csv").open(
+            "w", newline="", encoding="utf-8"
+        )
         self._frame_csv = csv.DictWriter(
             self._frame_csv_f,
             fieldnames=[

@@ -14,7 +14,6 @@ from typing import Any
 
 import cv2
 import settings as S
-
 from aruco_pose import ArucoPoseEstimator
 from frame_io import format_frame
 from runtime_logger import RuntimeLogger
@@ -240,7 +239,7 @@ def run_live(args) -> int:
     )
 
     pose_estimator = ArucoPoseEstimator(
-        marker_world_positions=getattr(S, "POSE_MARKER_WORLD_POSITIONS"),
+        marker_world_positions=S.POSE_MARKER_WORLD_POSITIONS,
         marker_size_m=float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
         aruco_dict_name=str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
         hfov_deg=float(getattr(S, "POSE_HFOV_DEG", 84.0)),
@@ -259,7 +258,7 @@ def run_live(args) -> int:
         "logs_enabled": bool(logs_enabled),
         "pure_aruco": True,
         "marker_world_positions": {
-            str(k): list(v) for k, v in getattr(S, "POSE_MARKER_WORLD_POSITIONS").items()
+            str(k): list(v) for k, v in S.POSE_MARKER_WORLD_POSITIONS.items()
         },
         "marker_size_m": float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
         "aruco_dict": str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
@@ -381,7 +380,10 @@ def run_live(args) -> int:
 
             if save_output:
                 if out is None:
-                    output_path = Path(getattr(args, "output", None) or getattr(S, "OUTPUT_VIDEO", "aruco_output.mp4"))
+                    output_path = Path(
+                        getattr(args, "output", None)
+                        or getattr(S, "OUTPUT_VIDEO", "aruco_output.mp4")
+                    )
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     fourcc = cv2.VideoWriter_fourcc(*str(getattr(S, "OUTPUT_CODEC", "mp4v")))
                     out = cv2.VideoWriter(str(output_path), fourcc, writer_fps, (width, height))

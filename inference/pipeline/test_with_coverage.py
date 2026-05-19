@@ -35,7 +35,16 @@ def validate_latest_log(log_root: str = "logs") -> int:
     if not packet_lines:
         raise AssertionError("packets_log.jsonl is empty")
     packet = json.loads(packet_lines[0])
-    for key in ["frame_id", "timestamp", "timestamp_video_s", "width", "height", "pose", "detections", "counts"]:
+    for key in [
+        "frame_id",
+        "timestamp",
+        "timestamp_video_s",
+        "width",
+        "height",
+        "pose",
+        "detections",
+        "counts",
+    ]:
         if key not in packet:
             raise AssertionError(f"Missing packet key: {key}")
     if not isinstance(packet["pose"], dict):

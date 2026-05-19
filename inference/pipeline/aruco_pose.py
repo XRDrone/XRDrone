@@ -70,7 +70,9 @@ def camera_matrix_from_hfov(width: int, height: int, hfov_deg: float) -> np.ndar
     return np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]], dtype=np.float64)
 
 
-def marker_corners_world(center_xyz: tuple[float, float, float], marker_size_m: float) -> np.ndarray:
+def marker_corners_world(
+    center_xyz: tuple[float, float, float], marker_size_m: float
+) -> np.ndarray:
     """
     Return the four world-space corners for one marker.
 
@@ -199,8 +201,7 @@ class ArucoPoseEstimator:
         corner_refinement: str = "subpix",
     ) -> None:
         self.marker_world_positions = {
-            int(k): tuple(float(v) for v in xyz)
-            for k, xyz in marker_world_positions.items()
+            int(k): tuple(float(v) for v in xyz) for k, xyz in marker_world_positions.items()
         }
         self.marker_size_m = float(marker_size_m)
         self.aruco_dict_name = str(aruco_dict_name)

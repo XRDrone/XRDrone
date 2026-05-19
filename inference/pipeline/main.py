@@ -44,7 +44,10 @@ def parse_args():
         "--logs",
         "--log",
         action="store_true",
-        help="Enable per-run log folder creation. By default, python main.py runs normally without logs.",
+        help=(
+            "Enable per-run log folder creation. "
+            "By default, python main.py runs normally without logs."
+        ),
     )
     parser.add_argument(
         "--log-root",
