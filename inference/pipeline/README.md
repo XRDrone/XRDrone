@@ -1,87 +1,102 @@
-# XRDrone Detector + ORB-SLAM Fusion Pipeline
+# XRDrone Pure ArUco Video Runner
 
-This repository keeps the pipeline documentation split into focused Markdown files inside `docs/`. Use those files as the main reference for setup, runtime behavior, packet structure, settings, and runtime output.
+This version runs the prerecorded-video ArUco marker pipeline only. It does not use ORB-SLAM.
 
-## Start Here
+## Marker Layout
 
-The top-level README is intentionally brief. Detailed documentation lives in `docs/` so setup, runtime behavior, and protocol details stay organized and easier to maintain.
+The default marker world coordinates in `settings.py` are:
 
-## Native Module Build
+| Marker ID | X | Y | Z |
+|---:|---:|---:|---:|
+| 0 | 0.00 | 0.00 | 0.00 |
+| 1 | -3.03 | 0.00 | 0.00 |
+| 2 | -5.00 | 0.00 | 0.00 |
 
-The pipeline is now a mixed Python + Rust project.
+The pose solver assumes the markers lie on the `Y=0` plane and that coordinates are in meters.
 
-The application entrypoints and orchestration are still Python:
+## Normal Run
 
-- `main.py`
-- `live_runner.py`
-- `test_runner.py`
-- `pose_estimator.py`
-- rendering, capture, detector-to-SLAM fusion, and UDP orchestration
+Put `2026_05_18_15_28_04_Cache_Trimmed.mp4` in the same folder as `main.py`, then run:
 
-Several hot-path helper modules keep their original Python filenames but are backed by the native `xrdrone_native` extension after build:
-
-- `id_flicker_mitigation.py`
-- `output_formatter.py`
-- `world_projection.py`
-- `adaptive_tuning.py`
-- `motion_smoothing.py`
-
-The Rust implementation is now split into focused source files under `src/` instead of keeping everything in one monolithic `lib.rs`:
-
-- `src/lib.rs`: Python module registration only
-- `src/common.rs`: shared Python interop helpers, clamps, parsing, and history utilities
-- `src/geometry.rs`: matrix, quaternion, projection, and filter math helpers
-- `src/id_flicker.rs`: tracked-object continuity and coasting
-- `src/world_projection.rs`: foot-point extraction and world-ground projection
-- `src/udp.rs`: Unity UDP packet formatting
-- `orbslam_fusion.py`: ORB-SLAM pose-file parsing, frame/time alignment, and 3D projection
-- `src/adaptive_tuning.rs`: bounded runtime tuning controller
-- `src/smoothing.rs`: One Euro filters plus pose and world-track smoothing
-
-Before running `main.py` or `test_with_coverage.py`, build the native module in your active virtual environment:
-
-```bash
-bash build_native.sh
-python -c "import xrdrone_native; print('ok')"
+```powershell
+python main.py
 ```
 
-If any file in `src/` or `Cargo.toml` changes, rebuild the extension.
+This runs the ArUco pipeline normally and does **not** create a log folder.
 
-## Documentation Files
+## Run With Logs
 
-- `docs/setup.md`  
-  Environment setup, Python dependencies, Rust toolchain notes, native build, CUDA usage, and basic verification.
+Use `--logs` when you want the per-frame logs:
 
-- `docs/settings.md`  
-  Explanation of the configurable values in `settings.py`, including input selection, UDP output, pose options, smoothing, adaptive tuning, overlays, and keybinds.
+```powershell
+python main.py --logs
+```
 
-- `docs/udp-json.md`  
-  The UDP JSON contract, including top-level packet fields, detection fields, pose fields, and field meanings.
+Headless/logging run:
 
-- `docs/runtime-ui-and-terminal-reference.md`  
-  Reference for runtime text shown on the video output and messages printed to the terminal during normal pipeline execution. This includes items such as pose-mode text, hold states, adaptive tuning log lines, toggle messages, and other runtime status output.
+```powershell
+python main.py --logs --no-gui
+```
 
-- `docs/testing.md`  
-  How to validate the UDP contract and transport behavior, including native-build prerequisites, available test modes, expected pass/fail output, and packet/statistics checks.
+Use a different video path if needed:
 
-## Suggested Reading Order
+```powershell
+python main.py --video ".\2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs
+```
 
-1. `docs/setup.md`
-2. `docs/settings.md`
-3. `docs/udp-json.md`
-4. `docs/runtime-ui-and-terminal-reference.md`
-5. `docs/testing.md`
+Run only ArUco pose without YOLO detections:
 
-## Notes
+```powershell
+python main.py --no-detect
+```
 
-- Use the files in `docs/` as the main source of truth for pipeline documentation.
-- Keep detailed operational and protocol documentation there instead of expanding this top-level README.
-- Add new documentation files to `docs/` so related information remains grouped together.
-- The UDP schema is unchanged by the Rust port. The native module accelerates selected helper stages while preserving the existing Python-facing module names and packet contract.
+Run only ArUco pose with logs:
 
+```powershell
+python main.py --no-detect --logs
+```
 
-## ORB-SLAM Middle-Man Flow
+## Output Logs
 
-The backend now treats human detection and ORB-SLAM as separate branches that are fused in the Python middle-man before the packet is sent to Unity. The detector branch still produces image-space boxes and IDs. The ORB-SLAM branch now sends camera poses over UDP as JSON packets with `frame_id`, `timestamp`, `pose_valid`, `tracking_state`, `x`, `y`, `z`, `qx`, `qy`, `qz`, and `qw`. The fusion layer listens on a dedicated UDP port, matches by `frame_id` first, falls back to timestamp within a configurable tolerance, projects foot points onto the configured ground plane, and then publishes one combined UDP packet containing detections, projected world coordinates, a compatibility `pose` object, a raw `slam` object, and a `fusion_status` object.
+Logs are created only when `--logs` or `--log` is passed.
 
-When MediaMTX is used, the recommended layout is to let both branches consume the same stream source and let the middle-man remain the only stage that builds Unity-facing packets.
+Each logging run creates a folder like:
+
+```text
+logs/run_YYYYMMDD_HHMMSS/
+```
+
+Files written per logging run:
+
+- `run_metadata.json` — input path, marker layout, model status, and run configuration.
+- `summary.json` — total frames, runtime FPS, pose-valid ratio, and total detections.
+- `pose_log.jsonl` — one pose record per frame with `frame_id`, timestamps, markers used, camera position, quaternion, rvec/tvec, and reprojection error.
+- `marker_log.jsonl` — detected marker IDs and marker image corners per frame.
+- `detections_log.jsonl` — one detection record per frame with timestamps, frame size, bounding boxes, confidence, class, track ID, and foot-point coordinates.
+- `packets_log.jsonl` — full packet written/sent per frame.
+- `frames_log.csv` — compact frame-by-frame summary.
+- `errors_log.jsonl` — UDP/runtime errors if any occur.
+
+## Detection Model Behavior
+
+The runner tries to load `../models/yolo26n-seg.pt` by default. If the model is not present, the program still runs and uses empty detection arrays. This keeps ArUco pose processing usable even when the YOLO weights are missing.
+
+Use a different model path with:
+
+```powershell
+python main.py --model "..\models\your_model.pt"
+```
+
+## Smoke Tests
+
+Normal run, no logs:
+
+```powershell
+python main.py --no-gui --no-detect --max-frames 30
+```
+
+Logging run:
+
+```powershell
+python main.py --logs --no-gui --no-detect --max-frames 30
+```

@@ -1,590 +1,438 @@
 """
 live_runner.py
 
-Continuous live runtime for the XRDrone pipeline.
+Pure ArUco prerecorded/live-video runtime for XRDrone.
+This runner uses only ArUco marker pose estimation.
 """
 
 from __future__ import annotations
 
+import json
 import time
-from collections import deque
+from pathlib import Path
+from typing import Any
 
 import cv2
 import settings as S
-import torch
-from frame_io import format_frame, open_capture
-from merger import merge_detections
-from orbslam_fusion import (
-    OrbSlamPoseReceiver,
-    attach_foot_and_world_from_orbslam,
-    build_failure_overlay_lines,
-    build_fusion_status,
-    build_pose_packet,
-    build_slam_packet,
-)
-from output_formatter import to_unity_udp_packet
-from overlay import apply_rgba_overlay_fullframe, load_rgba_overlay
-from rendering import draw_masks, draw_pose_mode_status, draw_status_block, draw_tracked_boxes
-from runtime_builders import (
-    build_models,
-    build_pose_estimator,
-    make_adaptive_runtime_tuner,
-    make_id_flicker_mitigator,
-    make_pose_motion_smoother,
-    make_world_motion_smoother,
-)
-from runtime_controls import LiveRuntimeState, format_adaptive_metrics, handle_runtime_key
+
+from aruco_pose import ArucoPoseEstimator
+from frame_io import format_frame
+from runtime_logger import RuntimeLogger
 from streaming import UDPPublisher
 
-# Fixed optimized pipeline policy (removed from settings.py).
-TRACKING_ENABLED = True
-ULTRALYTICS_TRACKER_YAML = "botsort_drone.yaml"
-TRACKING_INPUT_CONF_PEOPLE = 0.10
-TRACKING_INPUT_CONF_FIRE = 0.10
+
+class OptionalYoloDetector:
+    """Small optional Ultralytics wrapper. If the model is missing, detections are empty."""
+
+    def __init__(self, model_path: str, *, enabled: bool = True) -> None:
+        self.model_path = str(model_path)
+        self.enabled = bool(enabled)
+        self.model = None
+        self.names: dict[int, str] = {}
+        self.error: str | None = None
+
+        if not self.enabled:
+            self.error = "disabled"
+            return
+        if not self.model_path or not Path(self.model_path).exists():
+            self.enabled = False
+            self.error = f"model not found: {self.model_path}"
+            return
+        try:
+            from ultralytics import YOLO
+
+            self.model = YOLO(self.model_path)
+            raw_names = getattr(self.model, "names", {}) or {}
+            if isinstance(raw_names, dict):
+                self.names = {int(k): str(v) for k, v in raw_names.items()}
+            elif isinstance(raw_names, (list, tuple)):
+                self.names = {i: str(v) for i, v in enumerate(raw_names)}
+            else:
+                self.names = {}
+        except Exception as exc:
+            self.enabled = False
+            self.error = repr(exc)
+
+    def _class_ids(self, wanted_names: tuple[str, ...]) -> list[int] | None:
+        if not self.names:
+            return None
+        wanted = {str(name).lower() for name in wanted_names}
+        ids = [idx for idx, name in self.names.items() if str(name).lower() in wanted]
+        return ids or None
+
+    def detect(self, frame_bgr, *, frame_id: int) -> tuple[list[dict[str, Any]], Any]:
+        if not self.enabled or self.model is None:
+            return [], None
+
+        pred_kw = dict(
+            conf=float(getattr(S, "PEOPLE_CONF", 0.40)),
+            imgsz=int(getattr(S, "IMGSZ", 960)),
+            verbose=False,
+        )
+        device = getattr(S, "DEVICE", None)
+        if device is not None:
+            pred_kw["device"] = device
+        class_ids = self._class_ids(tuple(getattr(S, "DETECT_CLASSES", ("person",))))
+        if class_ids is not None:
+            pred_kw["classes"] = class_ids
+
+        results = None
+        try:
+            tracker_yaml = str(getattr(S, "ULTRALYTICS_TRACKER_YAML", "botsort_drone.yaml"))
+            if bool(getattr(S, "TRACKING_ENABLED", True)) and Path(tracker_yaml).exists():
+                results = self.model.track(
+                    frame_bgr,
+                    persist=True,
+                    tracker=tracker_yaml,
+                    **pred_kw,
+                )
+            else:
+                results = self.model.predict(frame_bgr, **pred_kw)
+        except Exception:
+            results = self.model.predict(frame_bgr, **pred_kw)
+
+        detections: list[dict[str, Any]] = []
+        height, width = frame_bgr.shape[:2]
+        width_f = float(max(1, width))
+        height_f = float(max(1, height))
+
+        for result in results or []:
+            boxes = getattr(result, "boxes", None)
+            if boxes is None:
+                continue
+            for box in boxes:
+                try:
+                    cls_id = int(box.cls[0]) if box.cls is not None else -1
+                    label = str(self.names.get(cls_id, cls_id)).lower()
+                    if label == "item":
+                        label = "person"
+                    if label not in set(getattr(S, "UDP_SEND_CLASSES", ("person",))):
+                        continue
+                    conf = float(box.conf[0]) if box.conf is not None else 0.0
+                    x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
+                    track_id = None
+                    if getattr(box, "id", None) is not None:
+                        try:
+                            track_id = int(box.id[0])
+                        except Exception:
+                            track_id = None
+                    detections.append(
+                        {
+                            "frame_id": int(frame_id),
+                            "class": label,
+                            "confidence": conf,
+                            "bbox_xyxy": [x1, y1, x2, y2],
+                            "bbox_xywh": [x1, y1, x2 - x1, y2 - y1],
+                            "track_id": track_id,
+                            "foot_x": max(0.0, min(1.0, ((x1 + x2) * 0.5) / width_f)),
+                            "foot_y": max(0.0, min(1.0, y2 / height_f)),
+                        }
+                    )
+                except Exception:
+                    continue
+        return detections, results
 
 
-def _print_device_info() -> None:
-    print("torch:", torch.__version__)
-    print("cuda available:", torch.cuda.is_available())
-    if torch.cuda.is_available():
-        print("gpu:", torch.cuda.get_device_name(0))
-
-
-def _normalize_merged_detections(
-    merged: list[dict], *, use_ultra_track: bool, fire_class_names: set[str]
-):
-    for det in merged:
-        if det.get("class") == "item":
-            det["class"] = "person"
-
-        if use_ultra_track and det.get("track_id") is not None:
-            try:
-                base_id = int(det["track_id"])
-                cls_name = str(det.get("class", "")).lower()
-                if cls_name in fire_class_names:
-                    det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_FIRE", 1_000_000))
-                else:
-                    det["track_id"] = base_id + int(getattr(S, "TRACK_ID_OFFSET_PEOPLE", 0))
-            except Exception:
-                pass
-
-
-def _run_model_inference(
+def _build_packet(
     *,
-    infer_frame,
-    state: LiveRuntimeState,
-    people_seg_model,
-    fire_model,
-    detect_class_ids,
-    pred_kw: dict,
-):
-    people_results = []
-    fire_results = []
+    frame_id: int,
+    timestamp: float,
+    timestamp_video_s: float | None,
+    width: int,
+    height: int,
+    pose: dict[str, Any],
+    detections: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "frame_id": int(frame_id),
+        "timestamp": float(timestamp),
+        "timestamp_video_s": None if timestamp_video_s is None else float(timestamp_video_s),
+        "width": int(width),
+        "height": int(height),
+        "pose": pose,
+        "detections": detections,
+        "counts": {
+            "detections": int(len(detections)),
+            "markers_detected": int(pose.get("markers_detected", 0) or 0),
+            "markers_used": int(pose.get("markers_used", 0) or 0),
+        },
+    }
 
-    use_ultra_track = bool(state.tracking_enabled)
 
-    if state.people_on:
-        if use_ultra_track:
-            people_results = people_seg_model.track(
-                infer_frame,
-                conf=TRACKING_INPUT_CONF_PEOPLE,
-                classes=detect_class_ids,
-                persist=True,
-                tracker=ULTRALYTICS_TRACKER_YAML,
-                **pred_kw,
+def _draw_detections(frame, detections: list[dict[str, Any]]) -> None:
+    for det in detections:
+        try:
+            x1, y1, x2, y2 = [int(round(v)) for v in det["bbox_xyxy"]]
+            label = str(det.get("class", "obj"))
+            conf = float(det.get("confidence", 0.0))
+            tid = det.get("track_id")
+            text = f"{label} {conf:.2f}" if tid is None else f"{label}#{tid} {conf:.2f}"
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+            cv2.putText(
+                frame,
+                text,
+                (x1, max(20, y1 - 6)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 255, 255),
+                2,
+                cv2.LINE_AA,
             )
-        else:
-            people_results = people_seg_model.predict(
-                infer_frame,
-                conf=S.PEOPLE_CONF,
-                classes=detect_class_ids,
-                **pred_kw,
-            )
-
-    if state.fire_on:
-        if use_ultra_track:
-            fire_results = fire_model.track(
-                infer_frame,
-                conf=TRACKING_INPUT_CONF_FIRE,
-                persist=True,
-                tracker=ULTRALYTICS_TRACKER_YAML,
-                **pred_kw,
-            )
-        else:
-            fire_results = fire_model.predict(infer_frame, conf=S.FIRE_CONF, **pred_kw)
-
-    return people_results, fire_results, use_ultra_track
+        except Exception:
+            continue
 
 
-def _apply_adaptive_tuning(
-    *,
-    adaptive_tuner,
-    pose_data: dict,
-    merged: list[dict],
-    udp_ready_detections: list[dict],
-    fps_hist,
-    drop_hist,
-    state: LiveRuntimeState,
-    pose_smoother,
-    world_smoother,
-    id_flicker_mitigator,
-) -> None:
-    if adaptive_tuner is None:
-        return
-
-    adaptive_tuner.record_frame(
-        pose_data=pose_data,
-        raw_detections=merged,
-        udp_ready_detections=udp_ready_detections,
+def _draw_pose_status(frame, pose: dict[str, Any], log_dir: Path | None = None) -> None:
+    status = "POSE OK" if pose.get("pose_valid") else "POSE MISSING"
+    text = (
+        f"{status} | markers {pose.get('markers_used', 0)}/"
+        f"{pose.get('markers_detected', 0)} | frame {pose.get('frame_id')}"
     )
-    avg_fps = float(sum(fps_hist) / len(fps_hist)) if fps_hist else 0.0
-    avg_drops = float(sum(drop_hist) / len(drop_hist)) if drop_hist else 0.0
-    tuning_update = adaptive_tuner.propose_adjustment(
-        current_motion_smoothing=state.motion_smoothing_value,
-        current_tau_on=id_flicker_mitigator.tau_on,
-        current_tau_off=id_flicker_mitigator.tau_off,
-        current_coast_frames=id_flicker_mitigator.coast_frames,
-        avg_fps=avg_fps,
-        avg_drop_frames=avg_drops,
+    cv2.putText(
+        frame,
+        text,
+        (20, 36),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.75,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
     )
-    if tuning_update is None or not bool(tuning_update.get("changed", False)):
-        return
-
-    from runtime_controls import update_motion_smoothing_value
-
-    state.motion_smoothing_value = update_motion_smoothing_value(
-        pose_smoother,
-        world_smoother,
-        float(tuning_update["motion_smoothing"]),
-    )
-    id_flicker_mitigator.set_runtime_policy(
-        tau_on=float(tuning_update["tau_on"]),
-        tau_off=float(tuning_update["tau_off"]),
-        coast_frames=int(tuning_update["coast_frames"]),
-    )
-    if bool(getattr(S, "ADAPTIVE_TUNING_LOG_UPDATES", True)):
-        metrics_text = format_adaptive_metrics(tuning_update["metrics"])
-        print(
-            "Adaptive tuning [{mode}] -> smooth={smooth:.2f}, tau_on={tau_on:.2f}, "
-            "tau_off={tau_off:.2f}, coast={coast} | {metrics}".format(
-                mode=str(tuning_update.get("mode", "?")),
-                smooth=state.motion_smoothing_value,
-                tau_on=float(id_flicker_mitigator.tau_on),
-                tau_off=float(id_flicker_mitigator.tau_off),
-                coast=int(id_flicker_mitigator.coast_frames),
-                metrics=metrics_text,
-            )
-        )
-
-
-def _render_runtime_frame(
-    *,
-    frame,
-    people_results,
-    fire_results,
-    people_seg_label,
-    fire_label,
-    udp_ready_detections,
-    state: LiveRuntimeState,
-    pose_estimator,
-    dji_overlay_bgra,
-    fusion_status: dict | None = None,
-):
-    want_track_overlay = bool(state.tracking_enabled and state.draw_track_ids)
-
-    if state.draw_detections and state.people_on:
-        frame = draw_masks(
+    if log_dir is not None:
+        cv2.putText(
             frame,
-            people_results,
-            names=people_seg_label.names,
-            colors=S.COLORS,
-            default_color=S.COLORS.get("person", (0, 255, 0)),
-            alpha=S.MASK_ALPHA,
-            text_scale=S.MASK_TEXT_SCALE,
-            text_thickness=S.MASK_TEXT_THICKNESS,
-            show_label=not want_track_overlay,
+            f"logs: {log_dir}",
+            (20, 66),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
         )
 
-    if state.draw_detections and state.fire_on:
-        frame = draw_masks(
-            frame,
-            fire_results,
-            names=fire_label.names,
-            colors=S.COLORS,
-            default_color=S.COLORS.get("fire", (255, 255, 255)),
-            alpha=S.MASK_ALPHA,
-            text_scale=S.MASK_TEXT_SCALE,
-            text_thickness=S.MASK_TEXT_THICKNESS,
-            show_label=not want_track_overlay,
-        )
 
-    if state.draw_detections and want_track_overlay:
-        frame = draw_tracked_boxes(
-            frame,
-            udp_ready_detections,
-            colors=S.COLORS,
-            default_color=(255, 255, 255),
-            text_scale=S.MASK_TEXT_SCALE,
-            text_thickness=S.MASK_TEXT_THICKNESS,
-            box_thickness=2,
-        )
-
-    if state.dji_overlay_on and dji_overlay_bgra is not None:
-        frame = apply_rgba_overlay_fullframe(frame, dji_overlay_bgra)
-
-    if state.pose_mode_overlay_on and pose_estimator is not None:
-        frame = draw_pose_mode_status(
-            frame,
-            pose_estimator.get_pose_mode_overlay_text(),
-            enabled=state.pose_mode_overlay_on,
-            origin=getattr(S, "POSE_MODE_OVERLAY_ORIGIN", (20, 40)),
-            text_scale=float(getattr(S, "POSE_MODE_OVERLAY_TEXT_SCALE", 0.9)),
-            text_thickness=int(getattr(S, "POSE_MODE_OVERLAY_TEXT_THICKNESS", 2)),
-        )
-
-    if fusion_status is not None:
-        frame = draw_status_block(
-            frame,
-            build_failure_overlay_lines(fusion_status),
-            enabled=bool(getattr(S, "ORBSLAM_STATUS_OVERLAY_ENABLED", True)),
-            origin=getattr(S, "ORBSLAM_STATUS_OVERLAY_ORIGIN", (20, 72)),
-            text_scale=float(getattr(S, "ORBSLAM_STATUS_OVERLAY_TEXT_SCALE", 0.65)),
-            text_thickness=int(getattr(S, "ORBSLAM_STATUS_OVERLAY_TEXT_THICKNESS", 2)),
-        )
-
-    return frame
+def _open_capture(video_path: str | None):
+    if video_path:
+        cap = cv2.VideoCapture(str(video_path))
+        desc = f"file: {video_path}"
+    elif str(getattr(S, "INPUT_MODE", "file")).lower() == "file":
+        cap = cv2.VideoCapture(str(S.VIDEO_PATH))
+        desc = f"file: {S.VIDEO_PATH}"
+    else:
+        cap = cv2.VideoCapture(int(getattr(S, "VIDEO_SOURCE", 0)))
+        desc = f"camera: {S.VIDEO_SOURCE}"
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open input {desc}")
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+    if fps <= 1.0:
+        fps = float(getattr(S, "DEFAULT_FPS", 30.0))
+    return cap, desc, fps
 
 
 def run_live(args) -> int:
-    _print_device_info()
-
-    people_seg_model, fire_model, people_seg_label, fire_label, _, detect_class_ids = build_models()
-    use_orbslam_fusion = bool(getattr(S, "ORBSLAM_FUSION_ENABLED", False))
-    pose_estimator = None if use_orbslam_fusion else build_pose_estimator()
-    pose_draw = bool(getattr(S, "POSE_DRAW_ARUCO", False)) and not use_orbslam_fusion
-    pose_smoother = None if use_orbslam_fusion else make_pose_motion_smoother()
-    world_smoother = make_world_motion_smoother()
-    id_flicker_mitigator = make_id_flicker_mitigator()
-    adaptive_tuner = make_adaptive_runtime_tuner()
-    orbslam_receiver = (
-        OrbSlamPoseReceiver(
-            getattr(S, "ORBSLAM_UDP_LISTEN_IP", "127.0.0.1"),
-            int(getattr(S, "ORBSLAM_UDP_PORT", 5010)),
-            max_entries=int(getattr(S, "ORBSLAM_POSE_BUFFER_SIZE", 4096)),
-            stale_timeout_s=float(getattr(S, "ORBSLAM_PACKET_STALE_TIMEOUT_S", 0.50)),
-            max_packet_bytes=int(getattr(S, "ORBSLAM_UDP_MAX_PACKET_BYTES", 65535)),
-        )
-        if use_orbslam_fusion
+    video_path = getattr(args, "video", None)
+    cap, input_desc, fps = _open_capture(video_path)
+    logs_enabled = bool(getattr(args, "logs", False))
+    logger = (
+        RuntimeLogger(getattr(args, "log_root", None) or getattr(S, "LOG_ROOT", "logs"))
+        if logs_enabled
         else None
     )
 
-    state = LiveRuntimeState(
-        people_on=bool(S.PEOPLE_ON_DEFAULT),
-        fire_on=bool(S.FIRE_ON_DEFAULT),
-        recording_enabled=bool(S.RECORDING_ENABLED_DEFAULT),
-        draw_detections=bool(S.DRAW_DETECTIONS_DEFAULT),
-        tracking_enabled=TRACKING_ENABLED,
-        draw_track_ids=bool(getattr(S, "DRAW_TRACK_IDS", True)),
-        pose_mode_overlay_on=bool(getattr(S, "POSE_MODE_OVERLAY_ENABLED_DEFAULT", True)),
-        dji_overlay_on=bool(S.DJI_MENU_OVERLAY_ENABLED_DEFAULT),
-        active_camera_source=S.CAMERA_SOURCE_DEFAULT,
-        motion_smoothing_value=float(getattr(S, "MOTION_SMOOTHING", 0.0)),
+    pose_estimator = ArucoPoseEstimator(
+        marker_world_positions=getattr(S, "POSE_MARKER_WORLD_POSITIONS"),
+        marker_size_m=float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
+        aruco_dict_name=str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
+        hfov_deg=float(getattr(S, "POSE_HFOV_DEG", 84.0)),
+        corner_refinement=str(getattr(S, "POSE_CORNER_REFINEMENT", "subpix")),
     )
-
-    dji_overlay_bgra = load_rgba_overlay(S.DJI_MENU_OVERLAY_PATH)
-    fire_class_names = {str(v).lower() for v in fire_label.names.values()}
-
-    fps_hist = deque(maxlen=30)
-    drop_hist = deque(maxlen=30)
-    t_prev = time.time()
-
-    cap, is_file_source, target_fps, video_start_wall, _input_desc = open_capture(
-        S.INPUT_MODE,
-        state.active_camera_source,
+    detector = OptionalYoloDetector(
+        getattr(args, "model", None) or getattr(S, "PEOPLE_MODEL_PATH", ""),
+        enabled=not bool(getattr(args, "no_detect", False)),
     )
+    udp = UDPPublisher(S.UDP_IP, int(S.UDP_PORT)) if bool(getattr(S, "ENABLE_UDP", True)) else None
 
-    fourcc = cv2.VideoWriter_fourcc(*S.OUTPUT_CODEC)
-    out = None
+    metadata = {
+        "input": input_desc,
+        "fps": fps,
+        "log_dir": str(logger.run_dir) if logger is not None else None,
+        "logs_enabled": bool(logs_enabled),
+        "pure_aruco": True,
+        "marker_world_positions": {
+            str(k): list(v) for k, v in getattr(S, "POSE_MARKER_WORLD_POSITIONS").items()
+        },
+        "marker_size_m": float(getattr(S, "POSE_MARKER_SIZE_M", 0.1645)),
+        "aruco_dict": str(getattr(S, "POSE_ARUCO_DICT", "DICT_4X4_50")),
+        "hfov_deg": float(getattr(S, "POSE_HFOV_DEG", 84.0)),
+        "detection_model_path": detector.model_path,
+        "detection_enabled": bool(detector.enabled),
+        "detection_status": detector.error or "loaded",
+    }
+    if logger is not None:
+        logger.write_metadata(metadata)
 
-    window_frames = 0
-    window_start = time.time()
+    print("Input:", input_desc)
+    if logger is not None:
+        print("Logs:", logger.run_dir)
+    else:
+        print("Logs: disabled (use --logs to create a per-run log folder)")
+    if detector.error:
+        print("Detection model:", detector.error)
+    else:
+        print("Detection model loaded:", detector.model_path)
+
     frame_id = 0
-
-    udp = UDPPublisher(S.UDP_IP, S.UDP_PORT) if S.ENABLE_UDP else None
-
-    pred_kw = dict(device=S.DEVICE, half=S.USE_FP16, imgsz=S.IMGSZ, verbose=False)
+    pose_valid_count = 0
+    total_detections = 0
+    started = time.time()
+    out = None
+    writer_fps = fps
+    max_frames = getattr(args, "max_frames", None)
+    save_output = bool(getattr(args, "save_output", False) or getattr(S, "SAVE_OUTPUT", False))
 
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
+            ok, raw_frame = cap.read()
+            if not ok:
                 break
-            frame_id += 1
+            frame_start = time.time()
+            next_frame_id = frame_id + 1
+            if max_frames is not None and int(max_frames) > 0 and next_frame_id > int(max_frames):
+                break
+            frame_id = next_frame_id
 
-            if is_file_source:
-                t_video = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
-                now = video_start_wall + t_video
-            else:
-                now = time.time()
-
-            frame = format_frame(frame)
-
-            infer_frame = frame.copy() if pose_draw else frame
-            if use_orbslam_fusion:
-                pose_solution = None
-                pose_data = build_pose_packet(None, hfov_deg=float(S.POSE_HFOV_DEG))
-                slam_packet = build_slam_packet(None, tracking_state="missing", match_mode="none")
-                fusion_status = build_fusion_status(
-                    source="orbslam",
-                    pose=None,
-                    match_mode="none",
-                    receiver_error=orbslam_receiver.last_error
-                    if orbslam_receiver is not None
-                    else None,
-                    projection_attempted=0,
-                    projection_projected=0,
-                )
-            else:
-                pose_data, pose_solution = pose_estimator.estimate_with_solution(
-                    frame, draw=pose_draw
-                )
-                pose_data, pose_solution = pose_smoother.smooth(
-                    pose_data, pose_solution, timestamp=now
-                )
-                slam_packet = {
-                    "tracking_state": "disabled",
-                    "match_mode": "none",
-                    "pose_valid": False,
-                    "frame_id": None,
-                    "timestamp": None,
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0,
-                    "qx": 0.0,
-                    "qy": 0.0,
-                    "qz": 0.0,
-                    "qw": 1.0,
-                }
-                fusion_status = {
-                    "source": "aruco",
-                    "slam_tracking": "disabled",
-                    "match_mode": "none",
-                    "projection_state": "ok"
-                    if bool(pose_data.get("pose_valid", False))
-                    else "unavailable",
-                    "pose_valid": bool(pose_data.get("pose_valid", False)),
-                    "projection_attempted": 0,
-                    "projection_projected": 0,
-                    "reason": "",
-                }
-
-            wall_now = time.time()
-            dt = wall_now - t_prev
-            t_prev = wall_now
-            if dt > 0:
-                fps_hist.append(1.0 / dt)
-
-            window_frames += 1
-            if wall_now - window_start >= 1.0:
-                window_len = wall_now - window_start
-                expected_frames = target_fps * window_len
-                drops = max(0, int(round(expected_frames - window_frames)))
-                drop_hist.append(drops)
-                window_frames = 0
-                window_start = wall_now
-
-            people_results, fire_results, use_ultra_track = _run_model_inference(
-                infer_frame=infer_frame,
-                state=state,
-                people_seg_model=people_seg_model,
-                fire_model=fire_model,
-                detect_class_ids=detect_class_ids,
-                pred_kw=pred_kw,
-            )
-
-            merged = merge_detections(
-                people_results,
-                fire_results,
-                people_model=people_seg_label,
-                fire_model=fire_label,
-            )
-            _normalize_merged_detections(
-                merged,
-                use_ultra_track=use_ultra_track,
-                fire_class_names=fire_class_names,
-            )
-
+            timestamp_video_s = float(cap.get(cv2.CAP_PROP_POS_MSEC) or 0.0) / 1000.0
+            timestamp = time.time()
+            frame = format_frame(raw_frame)
             height, width = frame.shape[:2]
-            if use_orbslam_fusion:
-                matched_pose = None
-                match_mode = "none"
-                receiver_error = (
-                    orbslam_receiver.last_error if orbslam_receiver is not None else None
-                )
-                if orbslam_receiver is not None:
-                    matched_pose, match_mode = orbslam_receiver.match(
-                        frame_id=frame_id,
-                        timestamp=now,
-                        time_tolerance_s=float(getattr(S, "ORBSLAM_MATCH_TIME_TOLERANCE_S", 0.10)),
-                    )
-                    receiver_error = orbslam_receiver.last_error
-                projection_counts = attach_foot_and_world_from_orbslam(
-                    merged,
-                    pose=matched_pose,
-                    width=width,
-                    height=height,
-                    hfov_deg=float(S.POSE_HFOV_DEG),
-                    projection_classes=tuple(S.UDP_SEND_CLASSES),
-                    projection_min_conf=float(S.UDP_MIN_CONF),
-                    ground_plane_y=float(getattr(S, "ORBSLAM_GROUND_PLANE_Y", 0.0)),
-                )
-                pose_data = build_pose_packet(matched_pose, hfov_deg=float(S.POSE_HFOV_DEG))
-                slam_packet = build_slam_packet(
-                    matched_pose,
-                    tracking_state=(
-                        matched_pose.tracking_state
-                        if matched_pose is not None
-                        else (
-                            "stale"
-                            if receiver_error and "recent" in receiver_error.lower()
-                            else "missing"
-                        )
-                    ),
-                    match_mode=match_mode,
-                )
-                fusion_status = build_fusion_status(
-                    source="orbslam",
-                    pose=matched_pose,
-                    match_mode=match_mode,
-                    receiver_error=receiver_error,
-                    projection_attempted=projection_counts["attempted"],
-                    projection_projected=projection_counts["projected"],
-                )
-            else:
-                from world_projection import attach_foot_and_world
 
-                attach_foot_and_world(
-                    merged,
-                    pose_data=pose_data,
-                    pose_solution=pose_solution,
-                    width=width,
-                    height=height,
-                    projection_classes=S.UDP_SEND_CLASSES,
-                    projection_min_conf=S.UDP_MIN_CONF,
-                )
+            pose_result = pose_estimator.estimate(
+                frame,
+                frame_id=frame_id,
+                timestamp=timestamp,
+                timestamp_video_s=timestamp_video_s,
+                draw=bool(getattr(S, "POSE_DRAW_ARUCO", True)),
+            )
+            pose = pose_result.pose_packet
+            if pose.get("pose_valid"):
+                pose_valid_count += 1
 
-            if world_smoother is not None:
-                world_smoother.update_inplace(merged, timestamp=now)
+            detections, _raw_results = detector.detect(frame, frame_id=frame_id)
+            total_detections += len(detections)
 
-            if state.tracking_enabled:
-                udp_ready_detections = id_flicker_mitigator.apply(merged)
-            else:
-                udp_ready_detections = list(merged)
-
-            _apply_adaptive_tuning(
-                adaptive_tuner=adaptive_tuner,
-                pose_data=pose_data,
-                merged=merged,
-                udp_ready_detections=udp_ready_detections,
-                fps_hist=fps_hist,
-                drop_hist=drop_hist,
-                state=state,
-                pose_smoother=pose_smoother,
-                world_smoother=world_smoother,
-                id_flicker_mitigator=id_flicker_mitigator,
+            detection_record = {
+                "frame_id": int(frame_id),
+                "timestamp": float(timestamp),
+                "timestamp_video_s": float(timestamp_video_s),
+                "width": int(width),
+                "height": int(height),
+                "detections": detections,
+                "detection_count": int(len(detections)),
+            }
+            packet = _build_packet(
+                frame_id=frame_id,
+                timestamp=timestamp,
+                timestamp_video_s=timestamp_video_s,
+                width=width,
+                height=height,
+                pose=pose,
+                detections=detections,
             )
 
-            frame = _render_runtime_frame(
-                frame=frame,
-                people_results=people_results,
-                fire_results=fire_results,
-                people_seg_label=people_seg_label,
-                fire_label=fire_label,
-                udp_ready_detections=udp_ready_detections,
-                state=state,
-                pose_estimator=pose_estimator,
-                dji_overlay_bgra=dji_overlay_bgra,
-                fusion_status=fusion_status,
-            )
-
-            if S.SAVE_OUTPUT and state.recording_enabled:
-                if out is None:
-                    out_height, out_width = frame.shape[:2]
-                    out = cv2.VideoWriter(
-                        S.OUTPUT_VIDEO, fourcc, target_fps, (out_width, out_height)
-                    )
-                out.write(frame)
+            if logger is not None:
+                logger.log_pose(pose)
+                logger.log_markers(pose_result.marker_packet)
+                logger.log_detections(detection_record)
+                logger.log_packet(packet)
+                logger.log_frame_row(
+                    {
+                        "frame_id": frame_id,
+                        "timestamp": timestamp,
+                        "timestamp_video_s": timestamp_video_s,
+                        "width": width,
+                        "height": height,
+                        "pose_valid": bool(pose.get("pose_valid", False)),
+                        "markers_detected": int(pose.get("markers_detected", 0) or 0),
+                        "markers_used": int(pose.get("markers_used", 0) or 0),
+                        "detection_count": len(detections),
+                        "processing_ms": round((time.time() - frame_start) * 1000.0, 3),
+                    }
+                )
 
             if udp is not None:
-                out_height, out_width = frame.shape[:2]
-                packet = to_unity_udp_packet(
-                    udp_ready_detections,
-                    frame_id=frame_id,
-                    timestamp=now,
-                    width=out_width,
-                    height=out_height,
-                    class_map=S.UNITY_CLASS_ID,
-                    allowed_classes=S.UDP_SEND_CLASSES,
-                    min_conf=S.UDP_MIN_CONF,
-                )
-                packet["pose"] = pose_data
-                packet["slam"] = slam_packet
-                packet["fusion_status"] = fusion_status
                 try:
                     udp.send_json(packet)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    if logger is not None:
+                        logger.log_error(
+                            {
+                                "frame_id": int(frame_id),
+                                "timestamp": float(timestamp),
+                                "stage": "udp_send",
+                                "error": repr(exc),
+                            }
+                        )
+                    else:
+                        print(f"UDP send error on frame {frame_id}: {exc!r}")
 
-            if not args.no_gui:
-                cv2.imshow(S.WINDOW_NAME, frame)
+            if bool(getattr(S, "DRAW_DETECTIONS_DEFAULT", True)):
+                _draw_detections(frame, detections)
+            _draw_pose_status(frame, pose, logger.run_dir if logger is not None else None)
+
+            if save_output:
+                if out is None:
+                    output_path = Path(getattr(args, "output", None) or getattr(S, "OUTPUT_VIDEO", "aruco_output.mp4"))
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    fourcc = cv2.VideoWriter_fourcc(*str(getattr(S, "OUTPUT_CODEC", "mp4v")))
+                    out = cv2.VideoWriter(str(output_path), fourcc, writer_fps, (width, height))
+                out.write(frame)
+
+            if not bool(getattr(args, "no_gui", False)):
+                cv2.imshow(str(getattr(S, "WINDOW_NAME", "XRDrone ArUco")), frame)
                 key = cv2.waitKey(1) & 0xFF
-            else:
-                key = 255
+                if key == int(getattr(S, "KEY_ESC", 27)):
+                    break
 
-            control_result = handle_runtime_key(
-                key=key,
-                state=state,
-                pose_smoother=pose_smoother,
-                world_smoother=world_smoother,
-                id_flicker_mitigator=id_flicker_mitigator,
-                adaptive_tuner=adaptive_tuner,
-                cap=cap,
-                is_file_source=is_file_source,
-                target_fps=target_fps,
-                video_start_wall=video_start_wall,
-                fps_hist=fps_hist,
-                drop_hist=drop_hist,
-                t_prev=t_prev,
-                window_frames=window_frames,
-                window_start=window_start,
-            )
-            if control_result["should_exit"]:
-                break
-
-            cap = control_result["cap"]
-            is_file_source = control_result["is_file_source"]
-            target_fps = control_result["target_fps"]
-            video_start_wall = control_result["video_start_wall"]
-            t_prev = control_result["t_prev"]
-            window_frames = control_result["window_frames"]
-            window_start = control_result["window_start"]
-
+            if frame_id % int(getattr(S, "PRINT_EVERY_N_FRAMES", 30)) == 0:
+                print(
+                    f"frame={frame_id} pose_valid={pose.get('pose_valid')} "
+                    f"markers={pose.get('markers_used')}/{pose.get('markers_detected')} "
+                    f"detections={len(detections)}"
+                )
+    except Exception as exc:
+        if logger is not None:
+            logger.log_error({"timestamp": time.time(), "stage": "run_live", "error": repr(exc)})
+        raise
     finally:
+        elapsed = max(0.001, time.time() - started)
+        summary = {
+            "input": input_desc,
+            "log_dir": str(logger.run_dir) if logger is not None else None,
+            "logs_enabled": bool(logs_enabled),
+            "frames_processed": int(frame_id),
+            "elapsed_s": elapsed,
+            "avg_runtime_fps": float(frame_id) / elapsed,
+            "pose_valid_frames": int(pose_valid_count),
+            "pose_valid_ratio": float(pose_valid_count / frame_id) if frame_id else 0.0,
+            "total_detections_logged": int(total_detections),
+        }
+        if logger is not None:
+            logger.write_summary(summary)
+            logger.close()
         try:
             cap.release()
         except Exception:
             pass
-
         if out is not None:
             try:
                 out.release()
             except Exception:
                 pass
-
-        if not args.no_gui:
-            cv2.destroyAllWindows()
-
         if udp is not None:
             udp.close()
+        if not bool(getattr(args, "no_gui", False)):
+            cv2.destroyAllWindows()
 
+    print("Done.")
+    print(json.dumps(summary, indent=2))
     return 0

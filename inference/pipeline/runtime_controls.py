@@ -169,7 +169,7 @@ def handle_runtime_key(
 
     elif key in getattr(S, "KEY_TOGGLE_MOTION_SMOOTHING", (ord("g"), ord("G"))):
         if pose_smoother is None or world_smoother is None:
-            print("Motion smoothing controls are unavailable in ORB-SLAM fusion mode")
+            print("Motion smoothing controls are unavailable in this runtime mode")
         else:
             new_enabled = not bool(pose_smoother.enabled)
             pose_smoother.set_enabled(new_enabled)

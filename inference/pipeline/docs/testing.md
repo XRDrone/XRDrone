@@ -49,6 +49,111 @@ python test_with_coverage.py --stats --packets 120 --timeout 8
 
 This mode still computes packet sizes, timing jitter, frame gaps, and estimated ID switches. The packet validation step now covers the fusion fields as well.
 
+
+
+## Runtime Log Testing
+
+The runtime log feature is enabled with the `--logs` flag. Logs are optional so that normal runs do not create extra output folders.
+
+### Prerecorded video with logs
+
+Use this mode when validating a saved MP4 test video:
+
+```bash
+python main.py --video "2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs
+```
+
+For a full absolute path on macOS:
+
+```bash
+python main.py --video "/Users/troy/Desktop/XRDrone/inference/pipeline/2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs
+```
+
+For a headless run that only writes logs and does not open the OpenCV display window:
+
+```bash
+python main.py --video "/Users/troy/Desktop/XRDrone/inference/pipeline/2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs --no-gui
+```
+
+### Live video with logs
+
+Use this mode when the pipeline is reading from the configured live camera or capture-card input:
+
+```bash
+python main.py --logs
+```
+
+For headless live logging:
+
+```bash
+python main.py --logs --no-gui
+```
+
+The live input source is controlled by `settings.py`:
+
+```python
+INPUT_MODE = "camera"
+VIDEO_SOURCE = 0
+```
+
+If the capture card is not camera `0`, test camera indices and update `VIDEO_SOURCE` to the index that opens successfully.
+
+### Normal run without logs
+
+Running without `--logs` should process video normally without creating a new runtime log folder:
+
+```bash
+python main.py
+```
+
+For a prerecorded video without logs:
+
+```bash
+python main.py --video "2026_05_18_15_28_04_Cache_Trimmed.mp4"
+```
+
+### Expected log folder
+
+When `--logs` is enabled, each run creates a timestamped folder under:
+
+```text
+logs/run_YYYYMMDD_HHMMSS/
+```
+
+Expected files include:
+
+- `run_metadata.json` — input source, marker layout, model status, and run configuration.
+- `summary.json` — processed frame count, runtime FPS, pose-valid ratio, and detection totals.
+- `pose_log.jsonl` — per-frame pose records with timestamps, frame IDs, marker usage, camera position, quaternion, rvec/tvec, and reprojection error.
+- `marker_log.jsonl` — detected marker IDs, image corners, known/unknown marker status, and rejected marker count.
+- `detections_log.jsonl` — per-frame detection records with frame IDs, timestamps, bounding boxes, confidence, class labels, track IDs, and foot-point coordinates.
+- `packets_log.jsonl` — the complete packet generated for each processed frame.
+- `frames_log.csv` — compact per-frame summary with pose validity, marker counts, detection count, and processing time.
+- `errors_log.jsonl` — runtime or UDP errors, if any occur.
+
+### Quick log verification
+
+After running with `--logs`, check that the newest log folder exists:
+
+```bash
+ls -lt logs | head
+```
+
+Inspect the summary:
+
+```bash
+cat logs/run_*/summary.json
+```
+
+Inspect the first few pose and detection records:
+
+```bash
+head -5 logs/run_*/pose_log.jsonl
+head -5 logs/run_*/detections_log.jsonl
+```
+
+A successful logged run should show one pose record and one detection record for each processed frame. If detections are disabled or the model is unavailable, `detections_log.jsonl` should still exist, but each frame may contain an empty `detections` list.
+
 ## What to Verify During a Real Fusion Run
 
 When ORB-SLAM is connected, a healthy run should show:

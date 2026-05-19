@@ -10,3 +10,9 @@ models/yolo_people_fire_smoke/runs/
 inference/pipeline/runs/
 inference/pipeline/target/
 tools/data/
+logs/
+yolovenv
+target/
+src/
+runs/
+target/
