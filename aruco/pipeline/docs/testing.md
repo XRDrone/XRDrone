@@ -66,13 +66,13 @@ python main.py --video "2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs
 For a full absolute path on macOS:
 
 ```bash
-python main.py --video "/Users/troy/Desktop/XRDrone/inference/pipeline/2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs
+python main.py --video "/Users/name/Desktop/XRDrone/inference/pipeline/2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs
 ```
 
 For a headless run that only writes logs and does not open the OpenCV display window:
 
 ```bash
-python main.py --video "/Users/troy/Desktop/XRDrone/inference/pipeline/2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs --no-gui
+python main.py --video "/Users/name/Desktop/XRDrone/inference/pipeline/2026_05_18_15_28_04_Cache_Trimmed.mp4" --logs --no-gui
 ```
 
 ### Live video with logs
