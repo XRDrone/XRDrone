@@ -1,0 +1,3 @@
+[submodule "orbslam/platforms/linux/orbslam3_docker"]
+	path = orbslam/platforms/linux/orbslam3_docker
+	url = https://github.com/jahaniam/orbslam3_docker.git
